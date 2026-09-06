@@ -1,0 +1,327 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "LinkedIn CLI Architecture",
+    "output": "architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "system-overview",
+        "label": "System Overview",
+        "focus": ["main_cli", "ratatui_tui", "browser_session", "draft_store", "infra_driver", "domain_traits", "content_engine"],
+        "note": "Complete LinkedIn CLI architecture separating composition root, TUI, browser lifecycle, SQLite staging, and domain core."
+      },
+      {
+        "id": "content-staging",
+        "label": "Content & Staging",
+        "focus": ["main_cli", "ratatui_tui", "draft_store", "content_engine", "analytics_fsm"],
+        "note": "Markdown ingestion, SQLite draft staging, cron/systemd export, template variance checks, and post analytics."
+      },
+      {
+        "id": "browser-security",
+        "label": "Browser & Security",
+        "focus": ["browser_session", "keyring_store", "infra_driver", "infra_services", "human_jitter"],
+        "note": "Chromium process lifecycle, OS keyring credentials, session profile sandboxing, and anti-bot jitter."
+      },
+      {
+        "id": "domain-core",
+        "label": "Domain Core",
+        "focus": ["domain_traits", "content_engine", "analytics_fsm"],
+        "note": "Pure business entities and traits decoupled from browser CDP and concrete databases."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "main_cli",
+      "type": "backend",
+      "brand": "rust",
+      "label": "main.rs",
+      "sublabel": "Composition Root",
+      "tag": "Clap & Dispatch",
+      "pos": [40, 60],
+      "size": [180, 64]
+    },
+    {
+      "id": "ratatui_tui",
+      "type": "frontend",
+      "label": "Ratatui TUI",
+      "sublabel": "src/infra/tui/",
+      "tag": "Split-Pane Terminal UI",
+      "pos": [40, 190],
+      "size": [180, 64]
+    },
+    {
+      "id": "render_engine",
+      "type": "backend",
+      "label": "render.rs",
+      "sublabel": "Output Formatter",
+      "tag": "NDJSON & SIGPIPE",
+      "pos": [40, 320],
+      "size": [180, 64]
+    },
+    {
+      "id": "browser_session",
+      "type": "backend",
+      "label": "BrowserSession",
+      "sublabel": "src/browser/session.rs",
+      "tag": "CDP Lifecycle & Signals",
+      "pos": [310, 60],
+      "size": [180, 64]
+    },
+    {
+      "id": "draft_store",
+      "type": "database",
+      "brand": "sqlite",
+      "label": "SQLite DraftStore",
+      "sublabel": "draft_store & drafts.rs",
+      "tag": "Drafts & Sched Export",
+      "pos": [310, 190],
+      "size": [180, 64]
+    },
+    {
+      "id": "keyring_store",
+      "type": "security",
+      "label": "Keyring & Sandbox",
+      "sublabel": "credentials & config.rs",
+      "tag": "OS Keyring & Profiles",
+      "pos": [310, 320],
+      "size": [180, 64]
+    },
+    {
+      "id": "infra_driver",
+      "type": "backend",
+      "label": "ChromiumDriver",
+      "sublabel": "src/infra/driver.rs",
+      "tag": "Auth & Navigation",
+      "pos": [590, 60],
+      "size": [190, 64]
+    },
+    {
+      "id": "infra_services",
+      "type": "backend",
+      "label": "CDP Infra Services",
+      "sublabel": "msg, conn, scraper, triage",
+      "tag": "Concrete Trait Impls",
+      "pos": [590, 190],
+      "size": [190, 64]
+    },
+    {
+      "id": "human_jitter",
+      "type": "backend",
+      "label": "Human Jitter",
+      "sublabel": "src/infra/jitter.rs",
+      "tag": "Anti-Bot Delays (45-120s)",
+      "pos": [590, 320],
+      "size": [190, 64]
+    },
+    {
+      "id": "domain_traits",
+      "type": "backend",
+      "label": "Domain Traits",
+      "sublabel": "src/domain/traits.rs",
+      "tag": "Pure Traits (No CDP)",
+      "pos": [870, 60],
+      "size": [180, 64]
+    },
+    {
+      "id": "content_engine",
+      "type": "backend",
+      "label": "Content Engine",
+      "sublabel": "post & messaging_batch",
+      "tag": "UTF-16 & Variance Check",
+      "pos": [870, 190],
+      "size": [180, 64]
+    },
+    {
+      "id": "analytics_fsm",
+      "type": "backend",
+      "label": "Analytics & FSM",
+      "sublabel": "analytics & page_state",
+      "tag": "Voyager Metrics & FSM",
+      "pos": [870, 320],
+      "size": [180, 64]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "CLI & Terminal UX",
+      "wraps": ["main_cli", "ratatui_tui", "render_engine"]
+    },
+    {
+      "kind": "region",
+      "label": "Browser & Persistence",
+      "wraps": ["browser_session", "draft_store", "keyring_store"]
+    },
+    {
+      "kind": "region",
+      "label": "Infrastructure Layer",
+      "wraps": ["infra_driver", "infra_services", "human_jitter"]
+    },
+    {
+      "kind": "region",
+      "label": "Domain Layer",
+      "wraps": ["domain_traits", "content_engine", "analytics_fsm"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "cli-to-session",
+      "from": "main_cli",
+      "to": "browser_session",
+      "label": "launches",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -16
+    },
+    {
+      "id": "cli-to-tui",
+      "from": "main_cli",
+      "to": "ratatui_tui",
+      "label": "launches TUI",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 20
+    },
+    {
+      "id": "tui-to-render",
+      "from": "ratatui_tui",
+      "to": "render_engine",
+      "label": "renders UI",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 20
+    },
+    {
+      "id": "tui-to-draft",
+      "from": "ratatui_tui",
+      "to": "draft_store",
+      "label": "stages draft",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -16
+    },
+    {
+      "id": "draft-to-keyring",
+      "from": "draft_store",
+      "to": "keyring_store",
+      "label": "session profile",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 20
+    },
+    {
+      "id": "session-to-driver",
+      "from": "browser_session",
+      "to": "infra_driver",
+      "label": "CDP page",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -16
+    },
+    {
+      "id": "driver-to-traits",
+      "from": "infra_driver",
+      "to": "domain_traits",
+      "label": "implements trait",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -16
+    },
+    {
+      "id": "services-to-driver",
+      "from": "infra_services",
+      "to": "infra_driver",
+      "label": "shares page",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDy": -20
+    },
+    {
+      "id": "services-to-jitter",
+      "from": "infra_services",
+      "to": "human_jitter",
+      "label": "jitter delay",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 18
+    },
+    {
+      "id": "services-to-content",
+      "from": "infra_services",
+      "to": "content_engine",
+      "label": "dispatches",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -16
+    },
+    {
+      "id": "traits-to-content",
+      "from": "domain_traits",
+      "to": "content_engine",
+      "label": "entities",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 20
+    },
+    {
+      "id": "content-to-analytics",
+      "from": "content_engine",
+      "to": "analytics_fsm",
+      "label": "metrics & flow",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 18
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Composition Root & Terminal UX",
+      "items": [
+        "src/main.rs parses CLI commands with Clap, routing to domain traits with zero domain logic in the root",
+        "Ratatui interactive split-pane TUI provides keyboard-driven inbox, invite triage, and draft views",
+        "Streaming NDJSON and clean Unix stdout/stderr channel separation with graceful SIGPIPE exit handling"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Local Staging & Storage Engine",
+      "items": [
+        "SqliteDraftStore provides embedded persistence for drafts via rusqlite with lifecycle state transitions",
+        "Schedule export formats crontab lines and production systemd .service / .timer unit files",
+        "KeyringCredentialStore protects credentials via OS Keyring, isolating browser sessions per profile"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Browser Management & In-Page Transport",
+      "items": [
+        "BrowserSession manages Chromium process lifecycle with clean SIGINT/SIGTERM termination traps",
+        "InPageTransport executes authenticated in-page fetch() calls preserving session cookies and TLS fingerprints",
+        "Strict sandbox directory isolation ensures zero cross-profile cookie or storage leakage"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Content Engine & Anti-Spam Guardrails",
+      "items": [
+        "Exact UTF-16 code unit accounting for multi-byte emojis with 3,000-character boundary limits",
+        "Anti-spam pairwise similarity variance checks block mass identical template copy-pasta",
+        "Randomized human dispatch jitter (45s–120s) and strict batch ceilings prevent account flagging"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Domain Core & Analytics Engine",
+      "items": [
+        "Pure async traits and entities in src/domain/ remain completely decoupled from chromiumoxide",
+        "Voyager analytics schema mapping computes impressions, CTR %, and demographic breakdown",
+        "PageState FSM classifies page status purely by URL path, immune to query parameter deception"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Local environment & secrets
+.env
+.env.*
+!.env.example
+
+# Chromium session & profiles
+/user_data/
+/profiles/
+*.log
+
+# mise local overrides
+.mise.local.toml
+.mise.*.local.toml
+
+# OS artifacts
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# IDE & editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Archify visual checks & evidence sidecars
+*.visual-check.*
+

@@ -1,0 +1,209 @@
+# LinkedIn CLI (`linkedin`)
+
+Fast, Unix-composable LinkedIn command-line interface written in Rust. Automates LinkedIn workflows directly via the Chrome DevTools Protocol (CDP) using `chromiumoxide`.
+
+---
+
+## Overview & Architecture
+
+- **Clean Unix I/O Separation**: Formatted results (`table`, `json`, `ndjson`, `tsv`) are emitted strictly to `stdout`. All operational logs and tracing output stream to `stderr`.
+- **Anti-Bot Human Jitter**: Configurable randomized delays between navigation and interaction steps to mirror natural human behavior.
+- **Keyring & Profile Sandbox**: Credentials stored in the OS keyring; Chromium user data directories are isolated per profile under `~/.linkedin-cli/profiles/<session>`.
+- **Domain Decoupling**: Pure business domain logic separated from CDP infrastructure primitives.
+
+---
+
+## Toolchain & Tasks
+
+This project uses [`mise`](https://mise.jdx.dev/) and standard `cargo`:
+
+```bash
+# Build release binary
+cargo build --release
+
+# Run tests
+mise run test          # or: cargo test
+
+# Lint with Clippy (zero warnings enforced)
+mise run lint          # or: cargo clippy -- -D warnings
+
+# Run headless CLI
+mise run run -- <command>
+
+# Run in headed mode (visible browser UI)
+mise run run:headed -- <command>
+
+# Launch standalone Chrome with remote debugging on :9222 (for MCP / DevTools)
+mise run run:debug
+```
+
+---
+
+## Global Options
+
+All commands support these global options:
+
+| Flag | Description |
+|------|-------------|
+| `-o, --output <format>` | Output format: `table` (default), `json`, `ndjson`, `tsv` |
+| `--json` | Convenience shortcut for `--output json` |
+| `-d, --dry-run` | Simulates mutating operations with zero network requests |
+| `-q, --quiet` | Suppresses non-essential `stderr` diagnostics |
+| `--headed` | Runs Chromium with a visible browser window |
+| `--session <name>` | Session profile to use (default: `$LINKEDIN_CLI_SESSION` or `default`) |
+| `--user-data-dir <path>` | Custom browser user data directory |
+| `--cdp-url <url>` | Connect to an existing CDP instance (e.g. `http://127.0.0.1:9222`) |
+
+---
+
+## Authentication & Profiles
+
+Store credentials in your system keyring or load them from environment variables (`LINKEDIN_USERNAME`, `LINKEDIN_PASSWORD`):
+
+```bash
+# Check current session login status
+linkedin auth status
+
+# Identify active authenticated user
+linkedin auth whoami
+
+# Add a named profile with credentials to keyring
+linkedin auth add work --username user@example.com --password "secret"
+
+# List stored profiles
+linkedin auth list
+
+# Switch active profile
+linkedin auth switch work
+
+# Delete stored profile
+linkedin auth remove work
+```
+
+---
+
+## Command Examples
+
+### Profile & Contact Info
+```bash
+# Fetch member profile details
+linkedin profile get alice-smith
+
+# Fetch member contact information (email, phone, websites)
+linkedin profile contact alice-smith
+
+# Check connection status with a member
+linkedin profile status alice-smith
+```
+
+### Connections & Invitations
+```bash
+# Send a connection request with a personalized note (max 300 chars)
+linkedin connection request alice-smith --note "Hi Alice, let's connect!"
+
+# List pending received invitations
+linkedin invite list --received
+
+# Interactive terminal triage for incoming invitations ([a]ccept, [i]gnore, [s]kip)
+linkedin invite triage --filter-has-note
+
+# Accept or ignore invitations directly
+linkedin invite accept alice-smith
+linkedin invite ignore bob-jones
+```
+
+### Messaging & Inbox
+```bash
+# Send a direct message
+linkedin message send alice-smith --text "Thanks for connecting!"
+
+# Inspect conversation thread history
+linkedin message thread alice-smith --limit 20
+
+# Filter inbox for unread conversations
+linkedin inbox list --unread --limit 10
+
+# Batch messaging with template variables and rate-limiting jitter
+linkedin message send-batch \
+  --template "Hi {{ first_name }}, enjoyed your post about {{ topic }}!" \
+  --recipients recipients.json \
+  --max-batch 15 \
+  --jitter-min 45 \
+  --jitter-max 120
+```
+
+### People Search
+```bash
+# Search people with filters
+linkedin search people "Software Engineer" \
+  --network second \
+  --location US \
+  --page 1
+```
+
+### Content Publishing & Analytics
+```bash
+# Publish a post from a Markdown file
+linkedin post create --file post.md --media image.png --visibility public
+
+# View engagement statistics and impression metrics
+linkedin post stats urn:li:activity:1234567890
+```
+
+### Draft Scheduler
+```bash
+# Stage a post draft with a scheduled publish date
+linkedin draft add --file announcement.md --schedule "2026-09-10T15:00:00Z"
+
+# List staged drafts
+linkedin draft list --status scheduled
+
+# Export scheduled draft as a cron line or systemd timer
+linkedin draft export --id <draft-id> --format cron
+linkedin draft export --id <draft-id> --format systemd
+```
+
+### Interactive Terminal UI (TUI)
+```bash
+# Launch full terminal UI split-pane dashboard
+linkedin tui
+
+# Launch directly into a specific tab (invitations, messages, drafts)
+linkedin tui --tab messages
+```
+
+### Shell Completions & Manpages
+```bash
+# Generate shell autocompletion script
+linkedin completions --shell zsh > ~/.zfunc/_linkedin
+
+# Generate manpages
+linkedin manpage --out-dir /usr/local/share/man/man1
+```
+
+---
+
+## Unix Composability
+
+Filter and process streaming NDJSON output using tools like `jq` and `fzf`:
+
+```bash
+# Extract unread sender names via jq
+linkedin inbox list --unread -o ndjson | jq -r '.sender'
+
+# Select an invitation interactively with fzf and accept it
+linkedin invite list --received -o ndjson \
+  | jq -r '.[] | .handle' \
+  | fzf \
+  | xargs -I {} linkedin invite accept {}
+```
+
+---
+
+## Dry-Run Testing
+
+Verify command logic and variable rendering without executing browser actions:
+
+```bash
+linkedin message send alice-smith --text "Test" --dry-run
+```
