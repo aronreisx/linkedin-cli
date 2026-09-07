@@ -21,8 +21,8 @@
       {
         "id": "browser-security",
         "label": "Browser & Security",
-        "focus": ["browser_session", "keyring_store", "infra_driver", "infra_services", "human_jitter"],
-        "note": "Chromium process lifecycle, OS keyring credentials, session profile sandboxing, and anti-bot jitter."
+        "focus": ["browser_session", "keyring_store", "infra_driver", "infra_services", "anti_bot_safety"],
+        "note": "Chromium process lifecycle, CDP stealth injection, OS keyring credentials, Gaussian human typing, and checkpoint tripwire."
       },
       {
         "id": "domain-core",
@@ -65,8 +65,8 @@
       "id": "browser_session",
       "type": "backend",
       "label": "BrowserSession",
-      "sublabel": "src/browser/session.rs",
-      "tag": "CDP Lifecycle & Signals",
+      "sublabel": "session.rs & stealth.rs",
+      "tag": "CDP & Stealth Injection",
       "pos": [310, 60],
       "size": [180, 64]
     },
@@ -108,11 +108,11 @@
       "size": [190, 64]
     },
     {
-      "id": "human_jitter",
-      "type": "backend",
-      "label": "Human Jitter",
-      "sublabel": "src/infra/jitter.rs",
-      "tag": "Anti-Bot Delays (45-120s)",
+      "id": "anti_bot_safety",
+      "type": "security",
+      "label": "Safety & Anti-Bot",
+      "sublabel": "typing, jitter & tripwire",
+      "tag": "Typing, Jitter & Tripwire",
       "pos": [590, 320],
       "size": [190, 64]
     },
@@ -158,7 +158,7 @@
     {
       "kind": "region",
       "label": "Infrastructure Layer",
-      "wraps": ["infra_driver", "infra_services", "human_jitter"]
+      "wraps": ["infra_driver", "infra_services", "anti_bot_safety"]
     },
     {
       "kind": "region",
@@ -241,10 +241,10 @@
       "labelDy": -20
     },
     {
-      "id": "services-to-jitter",
+      "id": "services-to-safety",
       "from": "infra_services",
-      "to": "human_jitter",
-      "label": "jitter delay",
+      "to": "anti_bot_safety",
+      "label": "typing & tripwire",
       "fromSide": "bottom",
       "toSide": "top",
       "labelDy": 18
@@ -292,26 +292,26 @@
       "title": "Local Staging & Storage Engine",
       "items": [
         "SqliteDraftStore provides embedded persistence for drafts via rusqlite with lifecycle state transitions",
-        "Schedule export formats crontab lines and production systemd .service / .timer unit files",
+        "Post draft hierarchy (post draft add/list/export) organizes local staging and automation schedule exports",
         "KeyringCredentialStore protects credentials via OS Keyring, isolating browser sessions per profile"
       ]
     },
     {
       "dot": "emerald",
-      "title": "Browser Management & In-Page Transport",
+      "title": "Browser Lifecycle & Stealth Protection",
       "items": [
         "BrowserSession manages Chromium process lifecycle with clean SIGINT/SIGTERM termination traps",
-        "InPageTransport executes authenticated in-page fetch() calls preserving session cookies and TLS fingerprints",
+        "CDP stealth script injection shims navigator.webdriver, window.chrome, WebGL vendor/renderer, and plugins",
         "Strict sandbox directory isolation ensures zero cross-profile cookie or storage leakage"
       ]
     },
     {
       "dot": "amber",
-      "title": "Content Engine & Anti-Spam Guardrails",
+      "title": "Behavioral Dynamics & Anti-Bot Safeguards",
       "items": [
-        "Exact UTF-16 code unit accounting for multi-byte emojis with 3,000-character boundary limits",
-        "Anti-spam pairwise similarity variance checks block mass identical template copy-pasta",
-        "Randomized human dispatch jitter (45s–120s) and strict batch ceilings prevent account flagging"
+        "Gaussian human typing engine emulates physical key events, Box-Muller delays, cognitive pauses, and typo correction",
+        "Tripwire circuit breaker detects /checkpoint/, CAPTCHA challenges, and anti-bot lockouts, halting automation",
+        "Randomized dispatch jitter (45s–120s) and pairwise template variance checks prevent account flagging"
       ]
     },
     {
