@@ -42,6 +42,7 @@ impl BrowserSession {
 
         let mut builder = CdpBrowserConfig::builder()
             .arg("--disable-blink-features=AutomationControlled")
+            .arg("--disable-features=IsolateOrigins,site-per-process")
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
             .arg("--disable-infobars")
@@ -140,7 +141,9 @@ impl BrowserSession {
     pub async fn new_page(&self, url: &str) -> Result<Page, AppError> {
         let lock = self.browser.lock().await;
         let b = lock.as_ref().ok_or_else(|| AppError::Browser("Browser session is closed".to_string()))?;
-        b.new_page(url).await.map_err(|e| AppError::Browser(format!("Failed to open page: {e}")))
+        let page = b.new_page(url).await.map_err(|e| AppError::Browser(format!("Failed to open page: {e}")))?;
+        crate::browser::stealth::apply_stealth(&page).await?;
+        Ok(page)
     }
 
     pub async fn close(&self) -> Result<(), AppError> {

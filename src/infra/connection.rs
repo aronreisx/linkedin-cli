@@ -147,6 +147,7 @@ impl ConnectionManager for ChromiumConnectionManager {
                 reason: e.to_string(),
             })?;
 
+        crate::infra::tripwire::assert_no_tripwire(&self.page).await?;
         tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
         human_jitter(&self.rule).await;
 
@@ -491,11 +492,8 @@ impl ConnectionManager for ChromiumConnectionManager {
                     }}
 
                     if (textarea) {{
-                        textarea.focus();
-                        textarea.value = noteText;
-                        textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        textarea.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                        await sleep(300);
+                        try {{ textarea.focus(); }} catch(_) {{}}
+                        return {{ status: "AWAIT_NOTE_INPUT" }};
                     }} else {{
                         return {{ status: "TEXTAREA_NOT_FOUND", reason: "Could not locate note textarea in modal" }};
                     }}
@@ -585,6 +583,69 @@ impl ConnectionManager for ChromiumConnectionManager {
 
         let status_str = val["status"].as_str().unwrap_or("UNKNOWN");
         match status_str {
+            "AWAIT_NOTE_INPUT" => {
+                if let Some(n) = note {
+                    crate::infra::typing::human_type(&self.page, n, None).await?;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+                }
+                // Dispatch send click on the open invitation modal
+                let js_click_send = r#"
+                    (async () => {
+                        const sleep = ms => new Promise(r => setTimeout(r, ms));
+                        const queryRoots = (sel) => {
+                            const els = Array.from(document.querySelectorAll(sel));
+                            document.querySelectorAll('*').forEach(el => {
+                                if (el.shadowRoot) els.push(...Array.from(el.shadowRoot.querySelectorAll(sel)));
+                            });
+                            return els;
+                        };
+                        let modal = null;
+                        for (let i = 0; i < 20; i++) {
+                            const modals = queryRoots('#artdeco-modal-outlet .artdeco-modal, dialog[data-testid="dialog"][open], .artdeco-modal.send-invite');
+                            if (modals.length > 0) { modal = modals[modals.length - 1]; break; }
+                            await sleep(200);
+                        }
+                        if (!modal) return { status: "MODAL_NOT_FOUND" };
+                        let sendBtn = null;
+                        for (let i = 0; i < 15; i++) {
+                            const buttons = Array.from(modal.querySelectorAll('button'));
+                            sendBtn = buttons.find(b => {
+                                const text = (b.innerText || '').trim().toLowerCase();
+                                const aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+                                return text === 'send' || text === 'send invitation' || text === 'send now' || aria.includes('send invitation') || (aria.includes('send') && !aria.includes('without'));
+                            });
+                            if (sendBtn && !sendBtn.disabled) break;
+                            await sleep(200);
+                        }
+                        if (!sendBtn) {
+                            sendBtn = Array.from(modal.querySelectorAll('button')).find(b => (b.innerText || '').toLowerCase().includes('send'));
+                        }
+                        if (!sendBtn) return { status: "SEND_BUTTON_NOT_FOUND" };
+                        try { sendBtn.focus(); } catch(e) {}
+                        sendBtn.click();
+                        for (let i = 0; i < 20; i++) {
+                            await sleep(200);
+                            const stillOpen = queryRoots('#artdeco-modal-outlet .artdeco-modal, dialog[data-testid="dialog"][open], .artdeco-modal.send-invite');
+                            if (!stillOpen || stillOpen.length === 0) break;
+                        }
+                        return { status: "SENT" };
+                    })()
+                "#;
+                let send_eval = self.page.evaluate(js_click_send).await.map_err(|e| AppError::Cdp(e.to_string()))?;
+                let send_val = send_eval.into_value::<Value>().unwrap_or_default();
+                let send_status = send_val["status"].as_str().unwrap_or("UNKNOWN");
+                if send_status != "SENT" {
+                    return Err(AppError::ElementNotFound {
+                        selector: format!("Connection send button after note for {public_id}: {send_val:?}"),
+                    });
+                }
+                info!(target: "connection", "Successfully sent connection request with note to {public_id}");
+                human_jitter(&self.rule).await;
+                Ok(StatusResult {
+                    public_identifier: public_id,
+                    state: ConnectionState::Pending,
+                })
+            }
             "SENT" | "SENT_DIRECTLY" => {
                 info!(target: "connection", "Successfully sent connection request to {public_id}");
                 human_jitter(&self.rule).await;

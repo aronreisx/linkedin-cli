@@ -8,6 +8,8 @@ pub mod messaging;
 pub mod scraper;
 pub mod search;
 pub mod tui;
+pub mod typing;
+pub mod tripwire;
 
 pub use connection::ChromiumConnectionManager;
 pub use contact::ChromiumContactInfoFetcher;
@@ -17,4 +19,6 @@ pub use driver::ChromiumLinkedInDriver;
 pub use messaging::ChromiumMessagingService;
 pub use scraper::ChromiumProfileScraper;
 pub use search::ChromiumPeopleSearchService;
+pub use tripwire::assert_no_tripwire;
 pub use tui::*;
+pub use typing::{human_type, HumanTypingConfig};

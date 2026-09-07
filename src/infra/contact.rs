@@ -105,6 +105,7 @@ impl ContactInfoFetcher for ChromiumContactInfoFetcher {
                 reason: e.to_string(),
             })?;
 
+        crate::infra::tripwire::assert_no_tripwire(&self.page).await?;
         human_jitter(&self.rule).await;
 
         let js_extract = r#"

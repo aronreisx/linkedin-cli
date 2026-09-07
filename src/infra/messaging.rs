@@ -64,6 +64,7 @@ impl ChromiumMessagingService {
                     url: thread_url.clone(),
                     reason: e.to_string(),
                 })?;
+            crate::infra::tripwire::assert_no_tripwire(&self.page).await?;
         } else {
             let profile_url = format!("https://www.linkedin.com/in/{public_id}/");
             self.page
@@ -74,6 +75,7 @@ impl ChromiumMessagingService {
                     reason: e.to_string(),
                 })?;
 
+            crate::infra::tripwire::assert_no_tripwire(&self.page).await?;
             human_jitter(&self.rule).await;
 
             let js_click_message = r#"
@@ -263,12 +265,8 @@ impl MessagingService for ChromiumMessagingService {
     async fn send_direct_message(&self, handle_or_url: &str, text: &str) -> Result<bool, AppError> {
         let public_id = self.open_compose_box(handle_or_url).await?;
 
-        // Native CDP text insertion directly through Chromium input subsystem
-        use chromiumoxide::cdp::browser_protocol::input::InsertTextParams;
-        self.page
-            .execute(InsertTextParams::new(text))
-            .await
-            .map_err(|e| AppError::Cdp(e.to_string()))?;
+        // Human-paced typing emulation through physical key events and cognitive delays
+        crate::infra::typing::human_type(&self.page, text, None).await?;
 
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
@@ -436,11 +434,8 @@ impl MessagingService for ChromiumMessagingService {
                 "#;
                 let _ = self.page.evaluate(js_refocus).await;
 
-                use chromiumoxide::cdp::browser_protocol::input::InsertTextParams;
-                self.page
-                    .execute(InsertTextParams::new(msg_text))
-                    .await
-                    .map_err(|e| AppError::Cdp(e.to_string()))?;
+                // Human-paced typing emulation through physical key events and cognitive delays
+                crate::infra::typing::human_type(&self.page, msg_text, None).await?;
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
             }
         }
