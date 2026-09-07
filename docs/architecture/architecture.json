@@ -102,7 +102,7 @@
       "id": "infra_services",
       "type": "backend",
       "label": "CDP Infra Services",
-      "sublabel": "msg, conn, scraper, triage",
+      "sublabel": "msg, conn, scraper",
       "tag": "Concrete Trait Impls",
       "pos": [590, 190],
       "size": [190, 64]
@@ -283,7 +283,7 @@
       "title": "Composition Root & Terminal UX",
       "items": [
         "src/main.rs parses CLI commands with Clap, routing to domain traits with zero domain logic in the root",
-        "Ratatui interactive split-pane TUI provides keyboard-driven inbox, invite triage, and draft views",
+        "Ratatui interactive split-pane TUI provides keyboard-driven inbox and draft views",
         "Streaming NDJSON and clean Unix stdout/stderr channel separation with graceful SIGPIPE exit handling"
       ]
     },

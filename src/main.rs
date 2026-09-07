@@ -4,7 +4,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use linkedin::browser::{BrowserConfig, BrowserSession};
 use linkedin::domain::{
-    ConnectionManager, ContactInfoFetcher, InboxFilter, InteractionRule,
+    ConnectionManager, ConnectionState, ContactInfoFetcher, InboxFilter, InteractionRule,
     InvitationManager, LinkedInDriver, MessagingService, PeopleSearchService, ProfileScraper,
 };
 use linkedin::infra::{
@@ -89,10 +89,11 @@ enum Commands {
     /// Invitation management
     Invite(InviteArgs),
 
-    /// Content publishing and Markdown ingestion
+    /// Content publishing, post analytics, and staged draft management
     Post(PostArgs),
 
-    /// Local draft staging, scheduling, and cron/systemd export
+    /// Local draft staging, scheduling, and export (deprecated alias: use 'linkedin post draft')
+    #[command(hide = true)]
     Draft(DraftArgs),
 
     /// Launch interactive split-pane Terminal UI (TUI)
@@ -267,8 +268,11 @@ enum MessageCommands {
         /// Profile URL or public identifier
         handle: String,
         /// Message body to send
-        #[arg(long)]
-        text: String,
+        #[arg(long, required_unless_present = "attachment")]
+        text: Option<String>,
+        /// Path to an attachment file to send
+        #[arg(short = 'a', long)]
+        attachment: Option<PathBuf>,
     },
     /// Send templated messages to a batch of recipients with safety checks
     SendBatch {
@@ -278,6 +282,9 @@ enum MessageCommands {
         /// Path to JSON file containing array of recipient objects
         #[arg(long)]
         recipients: PathBuf,
+        /// Default attachment to send with each message if not specified per recipient
+        #[arg(short = 'a', long)]
+        attachment: Option<PathBuf>,
         /// Maximum batch ceiling (default: 15)
         #[arg(long, default_value = "15")]
         max_batch: usize,
@@ -360,15 +367,6 @@ enum InviteCommands {
         #[arg(long)]
         limit: Option<usize>,
     },
-    /// Interactive terminal triage of incoming invitations
-    Triage {
-        /// Filter to invitations that include a personal note
-        #[arg(long)]
-        filter_has_note: bool,
-        /// Run in interactive terminal raw mode
-        #[arg(short, long, default_value = "true")]
-        interactive: bool,
-    },
     /// Accept a received invitation by profile handle
     Accept { handle: String },
     /// Withdraw a sent invitation by profile handle
@@ -402,6 +400,9 @@ enum PostCommands {
         /// LinkedIn post URN or activity ID (e.g. urn:li:activity:12345678)
         urn: String,
     },
+    /// Manage staged and scheduled post drafts
+    #[command(subcommand)]
+    Draft(DraftCommands),
 }
 
 #[derive(clap::Args, Debug)]
@@ -470,10 +471,10 @@ enum DebugCommands {
 
 #[derive(clap::Args, Debug)]
 struct InboxFilterArgs {
-    /// Fetch all conversations, paginating through history
+    /// Fetch all conversations, paginating through history until exhaustion or --limit
     #[arg(long)]
     all: bool,
-    /// Start fetching from this opaque cursor token
+    /// Start fetching from this opaque pagination cursor token (returned in previous queries)
     #[arg(long)]
     cursor: Option<String>,
     /// Only conversations with unread messages
@@ -491,7 +492,7 @@ struct InboxFilterArgs {
     /// Filter by message text
     #[arg(long)]
     contains: Option<String>,
-    /// Return at most N conversations
+    /// Return at most N conversations (defaults to LinkedIn's single-page batch of ~20 if omitted)
     #[arg(long)]
     limit: Option<usize>,
     /// Also emit untouched payload under _raw
@@ -541,7 +542,7 @@ async fn main() {
         tracing_subscriber::EnvFilter::new("off")
     } else {
         tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| "linkedin=info,browser=info,driver=info,scraper=info,connection=info,messaging=info,search=info".into())
+            .unwrap_or_else(|_| "linkedin=info,browser=info,driver=info,scraper=info,contact=info,connection=info,messaging=info,search=info".into())
     };
 
     tracing_subscriber::registry()
@@ -665,7 +666,7 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
             }
             return Ok(());
         }
-        Commands::Message(MessageArgs { command: MessageCommands::SendBatch { template, recipients, max_batch, jitter_min, jitter_max } }) => {
+        Commands::Message(MessageArgs { command: MessageCommands::SendBatch { template, recipients, attachment, max_batch, jitter_min, jitter_max } }) if cli.dry_run => {
             let template_str = if let Ok(content) = std::fs::read_to_string(template) {
                 content
             } else {
@@ -676,7 +677,15 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
             let recipients_arr: Vec<serde_json::Value> = serde_json::from_str(&recips_str)?;
 
             linkedin::domain::validate_batch_limits(recipients_arr.len(), *max_batch)?;
-            let rendered = linkedin::domain::render_batch_templates(&template_str, &recipients_arr)?;
+            let mut rendered = linkedin::domain::render_batch_templates(&template_str, &recipients_arr)?;
+            if let Some(ref default_att) = attachment {
+                let default_str = default_att.to_string_lossy().to_string();
+                for msg in &mut rendered {
+                    if msg.attachment.is_none() {
+                        msg.attachment = Some(default_str.clone());
+                    }
+                }
+            }
             let variance = linkedin::domain::check_content_variance(&rendered)?;
 
             let avg_jitter = (*jitter_min + *jitter_max) / 2;
@@ -690,22 +699,14 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 variance,
             };
 
-            if cli.dry_run {
-                let dry_run_action = DryRunAction {
-                    resource: "message".to_string(),
-                    action: "send_batch".to_string(),
-                    target: None,
-                    parameters: serde_json::to_value(&plan)?,
-                    dry_run: true,
-                };
-                render_dry_run(dry_run_action, format)?;
-            } else {
-                let summary = format!(
-                    "Batch Dispatch Plan:\nRecipients: {}\nEstimated Duration: {}s\nAverage Similarity: {:.1}%\nPasses Variance Check: {}",
-                    plan.total_recipients, plan.estimated_duration_secs, plan.variance.average_similarity * 100.0, plan.variance.passes_variance_check
-                );
-                render_data(&plan, format, &summary)?;
-            }
+            let dry_run_action = DryRunAction {
+                resource: "message".to_string(),
+                action: "send_batch".to_string(),
+                target: None,
+                parameters: serde_json::to_value(&plan)?,
+                dry_run: true,
+            };
+            render_dry_run(dry_run_action, format)?;
             return Ok(());
         }
         Commands::Post(PostArgs { command: PostCommands::Stats { urn } }) => {
@@ -748,8 +749,10 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
             }
             return Ok(());
         }
-        Commands::Draft(DraftArgs { command }) => {
+        Commands::Post(PostArgs { command: PostCommands::Draft(ref command) })
+        | Commands::Draft(DraftArgs { ref command }) => {
             let store = linkedin::infra::SqliteDraftStore::open_default()?;
+            let is_post = matches!(cli.command, Commands::Post(..));
             match command {
                 DraftCommands::Add { text, file, media, schedule } => {
                     let content = if let Some(f) = file {
@@ -765,8 +768,8 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
 
                     if cli.dry_run {
                         let dry_run_action = DryRunAction {
-                            resource: "draft".to_string(),
-                            action: "add".to_string(),
+                            resource: if is_post { "post".to_string() } else { "draft".to_string() },
+                            action: if is_post { "draft_add".to_string() } else { "add".to_string() },
                             target: None,
                             parameters: serde_json::json!({
                                 "text_length": content.len(),
@@ -826,8 +829,8 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
 
                     if cli.dry_run {
                         let dry_run_action = DryRunAction {
-                            resource: "draft".to_string(),
-                            action: "export".to_string(),
+                            resource: if is_post { "post".to_string() } else { "draft".to_string() },
+                            action: if is_post { "draft_export".to_string() } else { "export".to_string() },
                             target: Some(id.clone()),
                             parameters: serde_json::json!({ "format": export_format, "output": output_text }),
                             dry_run: true,
@@ -887,14 +890,21 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 }),
                 dry_run: true,
             },
-            Commands::Message(MessageArgs { command: MessageCommands::Send { handle, text } }) => DryRunAction {
+            Commands::Message(MessageArgs {
+                command: MessageCommands::Send {
+                    handle,
+                    text,
+                    attachment,
+                },
+            }) => DryRunAction {
                 resource: "message".to_string(),
                 action: "send".to_string(),
                 target: Some(handle.clone()),
                 parameters: serde_json::json!({
                     "text": text,
-                    "length": text.len(),
-                    "action": "send_direct_message"
+                    "length": text.as_ref().map(|t| t.len()).unwrap_or(0),
+                    "attachment": attachment.as_ref().map(|p| p.to_string_lossy().to_string()),
+                    "action": if attachment.is_some() { "send_direct_message_with_attachment" } else { "send_direct_message" }
                 }),
                 dry_run: true,
             },
@@ -921,44 +931,6 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 target: Some(handle.clone()),
                 parameters: serde_json::json!({ "action": "ignore_invitation" }),
                 dry_run: true,
-            },
-            Commands::Invite(InviteArgs { command: InviteCommands::Triage { filter_has_note, .. } }) => {
-                let mock_queue = vec![
-                    linkedin::domain::Invitation {
-                        profile_url: "https://www.linkedin.com/in/recruiter-dave/".to_string(),
-                        public_identifier: "recruiter-dave".to_string(),
-                        name: Some("Dave Recruiter".to_string()),
-                        headline: Some("Tech Talent Partner @ Apex".to_string()),
-                        sent_or_received_at: None,
-                        note: Some("Hi! Would love to connect regarding Rust roles.".to_string()),
-                    },
-                    linkedin::domain::Invitation {
-                        profile_url: "https://www.linkedin.com/in/engineer-eve/".to_string(),
-                        public_identifier: "engineer-eve".to_string(),
-                        name: Some("Eve Engineer".to_string()),
-                        headline: Some("Distributed Systems Developer".to_string()),
-                        sent_or_received_at: None,
-                        note: None,
-                    },
-                ];
-                let queue: Vec<_> = if *filter_has_note {
-                    mock_queue.into_iter().filter(|i| i.note.is_some()).collect()
-                } else {
-                    mock_queue
-                };
-                let dry_run_action = DryRunAction {
-                    resource: "invite".to_string(),
-                    action: "triage".to_string(),
-                    target: None,
-                    parameters: serde_json::json!({
-                        "queue_size": queue.len(),
-                        "filter_has_note": filter_has_note,
-                        "sample_invites": queue.iter().map(|i| &i.name).collect::<Vec<_>>(),
-                    }),
-                    dry_run: true,
-                };
-                render_dry_run(dry_run_action, format)?;
-                return Ok(());
             },
             Commands::Search(SearchArgs { command: SearchCommands::People { keywords, .. } }) => {
                 let mock_snippets = vec![
@@ -1067,6 +1039,20 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
     }
 
     let rule = InteractionRule::default();
+
+    // Commands that don't require an active session:
+    // Auth status (without handle) and Login
+    let requires_session = !matches!(
+        &cli.command,
+        Commands::Auth(AuthArgs { command: AuthCommands::Status { handle: None } })
+            | Commands::Status { handle: None }
+            | Commands::Auth(AuthArgs { command: AuthCommands::Login })
+            | Commands::Login
+    );
+
+    if requires_session {
+        ensure_authenticated_session(&page, &rule, store.as_ref(), &cli.session, &stored_creds).await?;
+    }
 
     // 4. Command dispatch to domain traits with infra implementations
     let command_result: Result<(), linkedin::errors::AppError> = async {
@@ -1184,9 +1170,18 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 }
                 render_data(&full_obj, format, &format!("Contact info for {handle}: emails={:?}", contact.emails))?;
             } else {
-                let summary = format!("Contact info for {handle}:\nEmails: {:?}\nPhones: {:?}\nWebsites: {:?}",
+                let mut summary = format!("Contact info for {handle}:\nEmails: {:?}\nPhones: {:?}\nWebsites: {:?}",
                     contact.emails, contact.phone_numbers, contact.websites
                 );
+                if let Some(ref bday) = contact.birthday {
+                    summary.push_str(&format!("\nBirthday: {bday}"));
+                }
+                if let Some(ref conn) = contact.connected {
+                    summary.push_str(&format!("\nConnected: {conn}"));
+                }
+                if !contact.twitter_handles.is_empty() {
+                    summary.push_str(&format!("\nTwitter: {:?}", contact.twitter_handles));
+                }
                 render_data(&contact, format, &summary)?;
             }
         }
@@ -1198,15 +1193,166 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
         Commands::Connection(ConnectionArgs { command: ConnectionCommands::Request { handle, note } })
         | Commands::Connect { handle, note } => {
             let conn_mgr = ChromiumConnectionManager::new(page, rule);
-            conn_mgr.send_connection_request(&handle, note.as_deref()).await?;
-            let res = serde_json::json!({ "status": "sent", "recipient": handle, "note": note });
-            render_data(&res, format, &format!("Connection request sent to {handle}"))?;
+            let status = conn_mgr.send_connection_request(&handle, note.as_deref()).await?;
+            let summary = match status.state {
+                ConnectionState::Pending => format!("Connection request sent to {handle}"),
+                ConnectionState::Connected => format!("{handle} is already a 1st degree connection"),
+                _ => format!("Connection status with {handle}: {}", status.state.as_str()),
+            };
+            let res = serde_json::json!({
+                "status": match status.state {
+                    ConnectionState::Pending => "sent",
+                    ConnectionState::Connected => "already_connected",
+                    _ => "qualified",
+                },
+                "recipient": handle,
+                "note": note,
+                "state": status.state.as_str(),
+            });
+            render_data(&res, format, &summary)?;
         }
-        Commands::Message(MessageArgs { command: MessageCommands::Send { handle, text } }) => {
+        Commands::Message(MessageArgs {
+            command: MessageCommands::Send {
+                handle,
+                text,
+                attachment,
+            },
+        }) => {
             let msg_svc = ChromiumMessagingService::new(page, rule);
-            msg_svc.send_direct_message(&handle, &text).await?;
-            let res = serde_json::json!({ "status": "sent", "recipient": handle, "text": text });
+            if let Some(ref att) = attachment {
+                msg_svc
+                    .send_direct_message_with_attachment(&handle, text.as_deref(), att)
+                    .await?;
+            } else {
+                let txt = text.as_deref().unwrap_or("");
+                msg_svc.send_direct_message(&handle, txt).await?;
+            }
+            let res = serde_json::json!({
+                "status": "sent",
+                "recipient": handle,
+                "text": text,
+                "attachment": attachment.as_ref().map(|p| p.to_string_lossy().to_string()),
+            });
             render_data(&res, format, &format!("Message sent to {handle}"))?;
+        }
+        Commands::Message(MessageArgs {
+            command: MessageCommands::SendBatch {
+                template,
+                recipients,
+                attachment,
+                max_batch,
+                jitter_min,
+                jitter_max,
+            },
+        }) => {
+            let template_str = if let Ok(content) = std::fs::read_to_string(&template) {
+                content
+            } else {
+                template.clone()
+            };
+            let recips_str = std::fs::read_to_string(recipients)
+                .map_err(linkedin::errors::AppError::Io)?;
+            let recipients_arr: Vec<serde_json::Value> = serde_json::from_str(&recips_str)?;
+
+            linkedin::domain::validate_batch_limits(recipients_arr.len(), max_batch)?;
+            let mut rendered = linkedin::domain::render_batch_templates(&template_str, &recipients_arr)?;
+            if let Some(ref default_att) = attachment {
+                let default_str = default_att.to_string_lossy().to_string();
+                for msg in &mut rendered {
+                    if msg.attachment.is_none() {
+                        msg.attachment = Some(default_str.clone());
+                    }
+                }
+            }
+            let variance = linkedin::domain::check_content_variance(&rendered)?;
+
+            if !variance.passes_variance_check {
+                tracing::warn!(
+                    target: "messaging",
+                    "Batch messages have high similarity ({:.1}%). Account protection recommends varying template tokens.",
+                    variance.average_similarity * 100.0
+                );
+            }
+
+            let msg_svc = ChromiumMessagingService::new(page, rule);
+            let total = rendered.len();
+            let mut results = Vec::with_capacity(total);
+
+            for (idx, msg) in rendered.iter().enumerate() {
+                let att_display = msg.attachment.as_deref().unwrap_or("none");
+                tracing::info!(
+                    target: "messaging",
+                    "[{}/{}] Dispatching batch message to {} (attachment: {})",
+                    idx + 1,
+                    total,
+                    msg.recipient,
+                    att_display
+                );
+
+                let send_res = if let Some(ref att) = msg.attachment {
+                    let att_path = std::path::Path::new(att);
+                    msg_svc
+                        .send_direct_message_with_attachment(&msg.recipient, Some(&msg.text), att_path)
+                        .await
+                } else {
+                    msg_svc.send_direct_message(&msg.recipient, &msg.text).await
+                };
+
+                let status_entry = match send_res {
+                    Ok(_) => serde_json::json!({
+                        "recipient": msg.recipient,
+                        "status": "sent",
+                        "text": msg.text,
+                        "attachment": msg.attachment,
+                    }),
+                    Err(e) => {
+                        tracing::error!(
+                            target: "messaging",
+                            "Failed to send to {}: {}",
+                            msg.recipient,
+                            e
+                        );
+                        serde_json::json!({
+                            "recipient": msg.recipient,
+                            "status": "failed",
+                            "error": e.to_string(),
+                            "text": msg.text,
+                            "attachment": msg.attachment,
+                        })
+                    }
+                };
+                results.push(status_entry);
+
+                // If there are more recipients, wait randomized jitter between jitter_min and jitter_max seconds
+                if idx + 1 < total {
+                    use rand::Rng;
+                    let min_j = jitter_min;
+                    let max_j = jitter_max.max(min_j);
+                    let jitter_secs = if min_j == max_j {
+                        min_j
+                    } else {
+                        rand::thread_rng().gen_range(min_j..=max_j)
+                    };
+
+                    tracing::info!(
+                        target: "messaging",
+                        "Anti-bot pacing: sleeping {jitter_secs}s before next message..."
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_secs(jitter_secs)).await;
+                }
+            }
+
+            let successful = results.iter().filter(|r| r["status"] == "sent").count();
+            let summary = format!(
+                "Batch Dispatch Complete: {successful}/{total} sent successfully"
+            );
+            let res = serde_json::json!({
+                "total": total,
+                "sent": successful,
+                "failed": total - successful,
+                "results": results,
+            });
+            render_data(&res, format, &summary)?;
         }
         Commands::Message(MessageArgs { command: MessageCommands::Thread { handle, limit } })
         | Commands::Thread { handle, limit } => {
@@ -1221,16 +1367,23 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
             let (inbox_res, raw_val) = msg_svc.list_inbox(&filter, filter_args.raw).await?;
             if format == OutputFormat::Ndjson {
                 linkedin::render::stream_ndjson_items(&inbox_res.conversations)?;
-            } else if filter_args.raw && raw_val.is_some() {
-                let mut full_obj = serde_json::to_value(&inbox_res)?;
-                if let Some(obj) = full_obj.as_object_mut() {
-                    if let Some(r) = raw_val {
-                        obj.insert("_raw".to_string(), r);
+            } else if format == OutputFormat::Json {
+                if filter_args.raw && raw_val.is_some() {
+                    let mut full_obj = serde_json::to_value(&inbox_res)?;
+                    if let Some(obj) = full_obj.as_object_mut() {
+                        if let Some(r) = raw_val {
+                            obj.insert("_raw".to_string(), r);
+                        }
                     }
+                    render_data(&full_obj, format, &format!("Loaded {} conversations", inbox_res.conversations.len()))?;
+                } else {
+                    render_data(&inbox_res, format, &format!("Loaded {} conversations", inbox_res.conversations.len()))?;
                 }
-                render_data(&full_obj, format, &format!("Loaded {} conversations", inbox_res.conversations.len()))?;
             } else {
-                let summary = format!("Loaded {} conversations from inbox", inbox_res.conversations.len());
+                let mut summary = format!("Loaded {} conversations from inbox", inbox_res.conversations.len());
+                if let Some(ref cur) = inbox_res.next_cursor {
+                    summary.push_str(&format!("\nNext page cursor: {cur} (use: linkedin inbox list --cursor \"{cur}\")"));
+                }
                 render_data(&inbox_res.conversations, format, &summary)?;
             }
         }
@@ -1256,43 +1409,41 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
             if format == OutputFormat::Ndjson {
                 linkedin::render::stream_ndjson_items(&invites)?;
             } else {
-                let summary = format!("Found {} invitations", invites.len());
+                let label = if sent { "sent" } else { "received" };
+                let summary = format_invitations_summary(&invites, label);
                 render_data(&invites, format, &summary)?;
             }
         }
-        Commands::Invite(InviteArgs { command: InviteCommands::Triage { filter_has_note, interactive: _ } }) => {
-            let conn_mgr = ChromiumConnectionManager::new(page, rule);
-            let mut invites = conn_mgr.list_received_invitations(0, Some(50)).await?;
-            if filter_has_note {
-                invites.retain(|i| i.note.is_some());
-            }
-            if invites.is_empty() {
-                println!("No pending invitations to triage.");
-                return Ok(());
-            }
-            let mut reader = linkedin::infra::TerminalTriageReader::new();
-            let triage_res = linkedin::domain::triage_invitations(&invites, &mut reader, &conn_mgr, false).await?;
-            let summary = format!(
-                "Triage completed!\nTotal Reviewed: {}\nAccepted: {}\nIgnored: {}\nSkipped: {}",
-                triage_res.total_reviewed, triage_res.accepted, triage_res.ignored, triage_res.skipped
-            );
-            render_data(&triage_res, format, &summary)?;
-        }
         Commands::Invite(InviteArgs { command: InviteCommands::Accept { handle } }) => {
             let conn_mgr = ChromiumConnectionManager::new(page, rule);
-            conn_mgr.accept_invitation(&handle).await?;
+            let ok = conn_mgr.accept_invitation(&handle).await?;
+            if !ok {
+                return Err(linkedin::errors::AppError::NotFound(format!(
+                    "Failed to accept invitation from '{handle}': invitation not found or accept button missing"
+                )));
+            }
             let res = serde_json::json!({ "status": "accepted", "invitation": handle });
             render_data(&res, format, &format!("Accepted invitation from {handle}"))?;
         }
         Commands::Invite(InviteArgs { command: InviteCommands::Withdraw { handle } }) => {
             let conn_mgr = ChromiumConnectionManager::new(page, rule);
-            conn_mgr.withdraw_invitation(&handle).await?;
+            let ok = conn_mgr.withdraw_invitation(&handle).await?;
+            if !ok {
+                return Err(linkedin::errors::AppError::NotFound(format!(
+                    "Failed to withdraw invitation to '{handle}': invitation not found or withdrawal confirmation missing"
+                )));
+            }
             let res = serde_json::json!({ "status": "withdrawn", "invitation": handle });
             render_data(&res, format, &format!("Withdrew invitation to {handle}"))?;
         }
         Commands::Invite(InviteArgs { command: InviteCommands::Ignore { handle } }) => {
             let conn_mgr = ChromiumConnectionManager::new(page, rule);
-            conn_mgr.ignore_invitation(&handle).await?;
+            let ok = conn_mgr.ignore_invitation(&handle).await?;
+            if !ok {
+                return Err(linkedin::errors::AppError::NotFound(format!(
+                    "Failed to ignore invitation from '{handle}': invitation not found or ignore button missing"
+                )));
+            }
             let res = serde_json::json!({ "status": "ignored", "invitation": handle });
             render_data(&res, format, &format!("Ignored invitation from {handle}"))?;
         }
@@ -1309,24 +1460,39 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
         Commands::Invites(args) => {
             let conn_mgr = ChromiumConnectionManager::new(page, rule);
             if let Some(target) = args.withdraw {
-                conn_mgr.withdraw_invitation(&target).await?;
+                let ok = conn_mgr.withdraw_invitation(&target).await?;
+                if !ok {
+                    return Err(linkedin::errors::AppError::NotFound(format!(
+                        "Failed to withdraw invitation to '{target}': invitation not found or withdrawal confirmation missing"
+                    )));
+                }
                 let res = serde_json::json!({ "status": "withdrawn", "invitation": target });
                 render_data(&res, format, &format!("Withdrew invitation to {target}"))?;
             } else if let Some(target) = args.accept {
-                conn_mgr.accept_invitation(&target).await?;
+                let ok = conn_mgr.accept_invitation(&target).await?;
+                if !ok {
+                    return Err(linkedin::errors::AppError::NotFound(format!(
+                        "Failed to accept invitation from '{target}': invitation not found or accept button missing"
+                    )));
+                }
                 let res = serde_json::json!({ "status": "accepted", "invitation": target });
                 render_data(&res, format, &format!("Accepted invitation from {target}"))?;
             } else if let Some(target) = args.ignore {
-                conn_mgr.ignore_invitation(&target).await?;
+                let ok = conn_mgr.ignore_invitation(&target).await?;
+                if !ok {
+                    return Err(linkedin::errors::AppError::NotFound(format!(
+                        "Failed to ignore invitation from '{target}': invitation not found or ignore button missing"
+                    )));
+                }
                 let res = serde_json::json!({ "status": "ignored", "invitation": target });
                 render_data(&res, format, &format!("Ignored invitation from {target}"))?;
             } else if args.sent {
                 let invites = conn_mgr.list_sent_invitations(args.scroll, args.limit).await?;
-                let summary = format!("Found {} sent invitations", invites.len());
+                let summary = format_invitations_summary(&invites, "sent");
                 render_data(&invites, format, &summary)?;
             } else {
                 let invites = conn_mgr.list_received_invitations(args.scroll, args.limit).await?;
-                let summary = format!("Found {} received invitations", invites.len());
+                let summary = format_invitations_summary(&invites, "received");
                 render_data(&invites, format, &summary)?;
             }
         }
@@ -1335,7 +1501,6 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
         | Commands::Post(..)
         | Commands::Draft(..)
         | Commands::Tui(..)
-        | Commands::Message(MessageArgs { command: MessageCommands::SendBatch { .. } })
         | Commands::Auth(AuthArgs {
             command: AuthCommands::Add { .. }
                 | AuthCommands::List
@@ -1353,4 +1518,145 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
     close_res?;
 
     Ok(())
+}
+
+async fn ensure_authenticated_session(
+    page: &chromiumoxide::Page,
+    rule: &InteractionRule,
+    store: &dyn linkedin::domain::CredentialStore,
+    session_name: &str,
+    stored_creds: &Option<linkedin::domain::ProfileCredentials>,
+) -> Result<(), linkedin::errors::AppError> {
+    use linkedin::domain::AuthStatus;
+    use linkedin::domain::traits::LinkedInDriver;
+    use linkedin::errors::AppError;
+    use linkedin::infra::ChromiumLinkedInDriver;
+
+    let driver = ChromiumLinkedInDriver::new(page.clone(), rule.clone());
+    let status = driver.check_auth_status().await?;
+
+    match status {
+        AuthStatus::Authenticated { ref account_name, .. } => {
+            tracing::debug!(
+                target: "auth",
+                "Authenticated session active: {}",
+                account_name.as_deref().unwrap_or("Connected")
+            );
+            Ok(())
+        }
+        AuthStatus::ChallengeCheckpoint { url } => {
+            tracing::warn!(
+                target: "auth",
+                "Two-factor authentication / security verification required at {url}.\nPlease accept the prompt on your phone or complete verification in the browser window (waiting up to 300s)..."
+            );
+            let checkpoint_start = std::time::Instant::now();
+            let mut cleared = false;
+            while checkpoint_start.elapsed().as_secs() < 300 {
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                let current_u = driver.page_url().await.unwrap_or_default();
+                let current_st = linkedin::domain::page_state::classify_page_url(&current_u);
+                if current_st == linkedin::domain::page_state::PageState::Feed
+                    || current_st == linkedin::domain::page_state::PageState::Profile
+                    || (current_st != linkedin::domain::page_state::PageState::Checkpoint
+                        && current_st != linkedin::domain::page_state::PageState::Login
+                        && current_st != linkedin::domain::page_state::PageState::Authwall)
+                {
+                    tracing::info!(target: "auth", "Two-factor authentication cleared! Redirected to {current_u}");
+                    cleared = true;
+                    break;
+                }
+            }
+            if !cleared {
+                return Err(AppError::CheckpointChallenge(url));
+            }
+            persist_session_cookies(page, store, session_name, stored_creds).await;
+            Ok(())
+        }
+        AuthStatus::Unauthenticated => {
+            tracing::info!(
+                target: "auth",
+                "Chromium has no active session. Signing in with stored credentials..."
+            );
+            let username = stored_creds
+                .as_ref()
+                .and_then(|c| c.username.clone())
+                .or_else(|| std::env::var("LINKEDIN_USERNAME").ok());
+            let password = stored_creds
+                .as_ref()
+                .and_then(|c| c.password.clone())
+                .or_else(|| std::env::var("LINKEDIN_PASSWORD").ok());
+
+            let u = username.ok_or_else(|| {
+                AppError::Authentication(
+                    "Chromium has no active LinkedIn session, and no username was found in keyring or environment (LINKEDIN_USERNAME). Run `linkedin auth add <name>` or set LINKEDIN_USERNAME / LINKEDIN_PASSWORD.".to_string()
+                )
+            })?;
+            let p = password.ok_or_else(|| {
+                AppError::Authentication(
+                    "Chromium has no active LinkedIn session, and no password was found in keyring or environment (LINKEDIN_PASSWORD). Run `linkedin auth add <name>` or set LINKEDIN_PASSWORD.".to_string()
+                )
+            })?;
+
+            let _ = driver.authenticate(Some(&u), Some(&p)).await?;
+            persist_session_cookies(page, store, session_name, stored_creds).await;
+            Ok(())
+        }
+    }
+}
+
+async fn persist_session_cookies(
+    page: &chromiumoxide::Page,
+    store: &dyn linkedin::domain::CredentialStore,
+    session_name: &str,
+    stored_creds: &Option<linkedin::domain::ProfileCredentials>,
+) {
+    if let Ok(cookies) = page.get_cookies().await {
+        let mut li_at = None;
+        let mut jsessionid = None;
+        for cookie in cookies {
+            if cookie.name == "li_at" {
+                li_at = Some(cookie.value);
+            } else if cookie.name == "JSESSIONID" {
+                let val = cookie.value.trim_matches('"').to_string();
+                jsessionid = Some(val);
+            }
+        }
+        if li_at.is_some() || jsessionid.is_some() {
+            let mut creds = stored_creds.clone().unwrap_or_default();
+            if let Some(token) = li_at {
+                creds.li_at = Some(token);
+            }
+            if let Some(session_id) = jsessionid {
+                creds.jsessionid = Some(session_id);
+            }
+            creds.created_at = linkedin::infra::current_epoch_seconds();
+            if let Err(e) = store.set_credentials(session_name, &creds) {
+                tracing::warn!(target: "driver", "Failed to persist cookies to keyring: {e}");
+            } else {
+                tracing::info!(
+                    target: "driver",
+                    "Session cookies successfully updated in keyring for profile '{session_name}'"
+                );
+            }
+        }
+    }
+}
+
+fn format_invitations_summary(invites: &[linkedin::domain::models::Invitation], label: &str) -> String {
+    if invites.is_empty() {
+        return format!("No {label} invitations found.");
+    }
+    let mut summary = format!("Found {} {label} invitations:\n", invites.len());
+    for inv in invites {
+        let name = inv.name.as_deref().unwrap_or(&inv.public_identifier);
+        let headline = inv.headline.as_deref().unwrap_or("No headline");
+        summary.push_str(&format!("• {} ({}) - {}\n", name, inv.public_identifier, headline));
+        if let Some(ref time) = inv.sent_or_received_at {
+            summary.push_str(&format!("  Time: {}\n", time));
+        }
+        if let Some(ref note) = inv.note {
+            summary.push_str(&format!("  Note: \"{}\"\n", note));
+        }
+    }
+    summary.trim_end().to_string()
 }

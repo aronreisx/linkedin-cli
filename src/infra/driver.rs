@@ -60,15 +60,16 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
                 return Ok(AuthStatus::Unauthenticated);
             }
 
-            let has_nav = self
+            let has_nav = match self
                 .page
                 .evaluate("Boolean(document.querySelector('.global-nav') || document.querySelector('#global-nav'))")
                 .await
-                .map_err(|e| AppError::Cdp(e.to_string()))?
-                .into_value::<bool>()
-                .unwrap_or(false);
+            {
+                Ok(val) => val.into_value::<bool>().unwrap_or(false),
+                Err(_) => false,
+            };
 
-            if has_nav || state == PageState::Feed || state == PageState::Profile {
+            if has_nav {
                 break;
             }
 
@@ -99,15 +100,16 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
             }
             Err(e) => {
                 debug!(target: "driver", "whoami() lookup during status check had error: {e}");
-                let has_nav = self
+                let has_nav = match self
                     .page
                     .evaluate("Boolean(document.querySelector('.global-nav') || document.querySelector('#global-nav'))")
                     .await
-                    .map_err(|e| AppError::Cdp(e.to_string()))?
-                    .into_value::<bool>()
-                    .unwrap_or(false);
+                {
+                    Ok(val) => val.into_value::<bool>().unwrap_or(false),
+                    Err(_) => false,
+                };
 
-                if has_nav || state == PageState::Feed {
+                if has_nav {
                     Ok(AuthStatus::Authenticated {
                         account_name: None,
                         self_profile: None,
@@ -371,53 +373,69 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
 
     async fn whoami(&self) -> Result<SelfProfile, AppError> {
         let voyager_url = "https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=me";
-        let (status, ok, body) = InPageTransport::fetch(&self.page, "GET", voyager_url, &[], None, 15_000).await?;
 
-        if !ok || status == 401 || status == 403 {
-            return Err(AppError::Authentication(format!(
-                "Failed to fetch own profile via Voyager API (HTTP {status})"
-            )));
-        }
-
-        let json_val: Value = serde_json::from_str(&body).map_err(AppError::Json)?;
-
-        let mut public_identifier = None;
-        let mut urn = None;
-        let mut full_name = None;
-
-        if let Some(included) = json_val.get("included").and_then(|i| i.as_array()) {
-            for entity in included {
-                if entity.get("$type").and_then(|t| t.as_str()).map(|s| s.contains("Profile")).unwrap_or(false) {
-                    if let Some(pid) = entity.get("publicIdentifier").and_then(|p| p.as_str()) {
-                        public_identifier = Some(pid.to_string());
+        let mut last_err = None;
+        for attempt in 1..=5 {
+            match InPageTransport::fetch(&self.page, "GET", voyager_url, &[], None, 15_000).await {
+                Ok((status, ok, body)) => {
+                    if !ok || status == 401 || status == 403 {
+                        return Err(AppError::Authentication(format!(
+                            "Failed to fetch own profile via Voyager API (HTTP {status})"
+                        )));
                     }
-                    if let Some(u) = entity.get("entityUrn").and_then(|u| u.as_str()) {
-                        urn = Some(u.to_string());
+
+                    let json_val: Value = serde_json::from_str(&body).map_err(AppError::Json)?;
+
+                    let mut public_identifier = None;
+                    let mut urn = None;
+                    let mut full_name = None;
+
+                    if let Some(included) = json_val.get("included").and_then(|i| i.as_array()) {
+                        for entity in included {
+                            if entity.get("$type").and_then(|t| t.as_str()).map(|s| s.contains("Profile")).unwrap_or(false) {
+                                if let Some(pid) = entity.get("publicIdentifier").and_then(|p| p.as_str()) {
+                                    public_identifier = Some(pid.to_string());
+                                }
+                                if let Some(u) = entity.get("entityUrn").and_then(|u| u.as_str()) {
+                                    urn = Some(u.to_string());
+                                }
+                                let first = entity.get("firstName").and_then(|f| f.as_str()).unwrap_or("");
+                                let last = entity.get("lastName").and_then(|l| l.as_str()).unwrap_or("");
+                                if !first.is_empty() || !last.is_empty() {
+                                    full_name = Some(format!("{first} {last}").trim().to_string());
+                                }
+                                break;
+                            }
+                        }
                     }
-                    let first = entity.get("firstName").and_then(|f| f.as_str()).unwrap_or("");
-                    let last = entity.get("lastName").and_then(|l| l.as_str()).unwrap_or("");
-                    if !first.is_empty() || !last.is_empty() {
-                        full_name = Some(format!("{first} {last}").trim().to_string());
+
+                    if public_identifier.is_none() {
+                        if let Some(elements) = json_val.get("elements").and_then(|e| e.as_array()) {
+                            if let Some(first) = elements.first() {
+                                public_identifier = first.get("publicIdentifier").and_then(|p| p.as_str()).map(|s| s.to_string());
+                                urn = first.get("entityUrn").and_then(|u| u.as_str()).map(|s| s.to_string());
+                            }
+                        }
                     }
-                    break;
+
+                    return Ok(SelfProfile {
+                        public_identifier,
+                        urn,
+                        full_name,
+                    });
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(attempt * 400)).await;
                 }
             }
         }
 
-        if public_identifier.is_none() {
-            if let Some(elements) = json_val.get("elements").and_then(|e| e.as_array()) {
-                if let Some(first) = elements.first() {
-                    public_identifier = first.get("publicIdentifier").and_then(|p| p.as_str()).map(|s| s.to_string());
-                    urn = first.get("entityUrn").and_then(|u| u.as_str()).map(|s| s.to_string());
-                }
-            }
+        if let Some(e) = last_err {
+            return Err(e);
         }
 
-        Ok(SelfProfile {
-            public_identifier,
-            urn,
-            full_name,
-        })
+        Err(AppError::Authentication("Could not fetch own profile".to_string()))
     }
 
     async fn navigate_to(&self, url: &str) -> Result<(), AppError> {

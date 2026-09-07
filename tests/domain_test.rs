@@ -1,6 +1,6 @@
 use linkedin::domain::{
     classify_page_url, AuthStatus, ConnectionState, ContactInfo, Date, DateRange, Education,
-    InteractionRule, Invitation, Message, PageState, Participant, PeopleSearchResult,
+    InboxResult, InteractionRule, Invitation, Message, PageState, Participant, PeopleSearchResult,
     Position, Profile, ProfileSnippet, SelfProfile, StatusResult,
 };
 use linkedin::errors::AppError;
@@ -133,6 +133,8 @@ fn test_contact_info_and_messaging_serialization() -> Result<(), Box<dyn std::er
         phone_numbers: vec!["+123456789".to_string()],
         websites: vec!["https://alice.dev".to_string()],
         twitter_handles: vec!["@alice".to_string()],
+        birthday: Some("April 12".to_string()),
+        connected: Some("May 2023".to_string()),
     };
     let json_contact = serde_json::to_string(&contact)?;
     let des_contact: ContactInfo = serde_json::from_str(&json_contact)?;
@@ -155,6 +157,7 @@ fn test_contact_info_and_messaging_serialization() -> Result<(), Box<dyn std::er
         sender_urn: Some("urn:member:1".to_string()),
         sender_name: Some("Alice".to_string()),
         text: Some("Hello!".to_string()),
+        attachments: vec![],
         delivered_at: Some(1700000000),
         timestamp: Some("Yesterday".to_string()),
     };
@@ -180,5 +183,23 @@ fn test_contact_info_and_messaging_serialization() -> Result<(), Box<dyn std::er
 fn test_interaction_rule_defaults() -> Result<(), Box<dyn std::error::Error>> {
     let rule = InteractionRule::default();
     assert!(rule.min_delay_ms <= rule.max_delay_ms);
+    Ok(())
+}
+
+#[test]
+fn test_inbox_result_cursor_serialization() -> Result<(), Box<dyn std::error::Error>> {
+    let inbox_with_cursor = InboxResult {
+        conversations: vec![],
+        next_cursor: Some("REVTQ0VORElORyYxNzg4NzkwMjkxNTA4JmNvbnZfMTIz".to_string()),
+    };
+    let json_with_cursor = serde_json::to_string(&inbox_with_cursor)?;
+    assert!(json_with_cursor.contains("next_cursor"));
+
+    let inbox_without_cursor = InboxResult {
+        conversations: vec![],
+        next_cursor: None,
+    };
+    let json_without_cursor = serde_json::to_string(&inbox_without_cursor)?;
+    assert!(!json_without_cursor.contains("next_cursor"));
     Ok(())
 }

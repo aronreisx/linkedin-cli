@@ -130,63 +130,92 @@ impl PeopleSearchService for ChromiumPeopleSearchService {
         human_jitter(&self.rule).await;
 
         let js_extract = r#"
-            (() => {
-                const cards = Array.from(document.querySelectorAll('li.reusable-search__result-container, div[data-chameleon-result-urn], div.entity-result'));
+            (async () => {
+                const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+                // Wait for search result cards or no-results indicator to hydrate
+                let cards = [];
+                for (let i = 0; i < 50; i++) {
+                    cards = Array.from(document.querySelectorAll('div[role="listitem"], li.reusable-search__result-container, div.entity-result, li[class*="search-result"], div[data-chameleon-result-urn]'));
+                    if (cards.length > 0) break;
+                    const noResults = document.querySelector('.search-reusable-search-no-results, [data-view-name*="no-results"]');
+                    if (noResults) break;
+                    await sleep(200);
+                }
+
                 const seen = new Set();
                 const results = [];
 
                 for (const card of cards) {
-                    const link = card.querySelector('a[href*="/in/"]');
-                    if (!link) continue;
-                    const href = link.href;
-                    const parts = href.split('/in/');
-                    if (parts.length < 2) continue;
-                    const publicId = parts[1].split('?')[0].split('#')[0].replace(/\/$/, '');
-                    if (!publicId || seen.has(publicId)) continue;
-                    seen.add(publicId);
+                    const links = Array.from(card.querySelectorAll('a[href*="/in/"]'));
+                    if (links.length === 0) continue;
 
-                    const nameEl = link.querySelector('span[aria-hidden="true"]') || link;
-                    let rawName = nameEl.innerText.trim();
+                    // Filter out mutual connection links so candidate link is prioritized
+                    let candidateLink = links.find(a => {
+                        const p = a.closest('p, div');
+                        const txt = (p?.innerText || '').toLowerCase();
+                        return !txt.includes('mutual connection') && !txt.includes('conexão em comum');
+                    }) || links[0];
+
+                    const href = candidateLink.href;
+                    if (!href.includes('/in/')) continue;
+
+                    let path = '';
+                    try {
+                        path = new URL(href).pathname;
+                    } catch (e) {
+                        path = href;
+                    }
+                    const parts = path.replace(/^\/|\/$/g, '').split('/');
+                    if (parts.length < 2 || parts[0] !== 'in') continue;
+
+                    let publicId = '';
+                    try {
+                        publicId = decodeURIComponent(parts[1]);
+                    } catch (e) {
+                        publicId = parts[1];
+                    }
+                    if (!publicId || seen.has(publicId.toLowerCase())) continue;
+                    seen.add(publicId.toLowerCase());
+
+                    let rawName = candidateLink.innerText.trim();
                     if (rawName.includes('\n')) {
                         rawName = rawName.split('\n')[0].trim();
                     }
+                    rawName = rawName.replace(/\s*•\s*(1st|2nd|3rd\+?|\d+º?)\b/gi, '').trim();
+                    rawName = rawName.replace(/\s*\(.*?\)$/g, '').trim();
                     const name = rawName || publicId;
 
-                    const headlineEl = card.querySelector('.entity-result__primary-subtitle, div[class*="primary-subtitle"]');
-                    const locationEl = card.querySelector('.entity-result__secondary-subtitle, div[class*="secondary-subtitle"]');
+                    const semanticHeadline = card.querySelector('.entity-result__primary-subtitle, div[class*="primary-subtitle"], [data-view-name*="subtitle"]')?.innerText?.trim();
+                    const semanticLocation = card.querySelector('.entity-result__secondary-subtitle, div[class*="secondary-subtitle"], [data-view-name*="caption"]')?.innerText?.trim();
+
+                    const cardLines = (card.innerText || '')
+                        .split('\n')
+                        .map(l => l.trim())
+                        .filter(Boolean);
+
+                    const actionWords = new Set(['connect', 'message', 'follow', 'pending', 'conectar', 'mensagem', 'seguir', 'more', 'mais']);
+                    const contentLines = cardLines.filter(line => {
+                        const lower = line.toLowerCase();
+                        if (actionWords.has(lower)) return false;
+                        if (/^•\s*(1st|2nd|3rd\+?|\d+º?)/i.test(line)) return false;
+                        if (line.includes('mutual connection') || line.includes('conexão em comum') || line.includes('conexões em comum')) return false;
+                        if (line.toLowerCase().includes('view') && line.toLowerCase().includes('profile')) return false;
+                        if (line.toLowerCase().includes('ver perfil')) return false;
+                        if (line === rawName || line === name || line.includes(name)) return false;
+                        return true;
+                    });
+
+                    const headline = semanticHeadline || (contentLines.length > 0 ? contentLines[0] : null);
+                    const location = semanticLocation || (contentLines.length > 1 ? contentLines[1] : null);
 
                     results.push({
                         public_identifier: publicId,
-                        profile_url: href.split('?')[0],
+                        profile_url: `https://www.linkedin.com/in/${encodeURIComponent(publicId)}/`,
                         name: name,
-                        headline: headlineEl ? headlineEl.innerText.trim() : null,
-                        location: locationEl ? locationEl.innerText.trim() : null
+                        headline: headline,
+                        location: location
                     });
-                }
-
-                if (results.length === 0) {
-                    const links = Array.from(document.querySelectorAll('a[href*="/in/"]'));
-                    for (const link of links) {
-                        const href = link.href;
-                        const parts = href.split('/in/');
-                        if (parts.length < 2) continue;
-                        const publicId = parts[1].split('?')[0].split('#')[0].replace(/\/$/, '');
-                        if (!publicId || seen.has(publicId)) continue;
-                        seen.add(publicId);
-
-                        const nameEl = link.querySelector('span[aria-hidden="true"]') || link;
-                        let rawName = nameEl.innerText.trim();
-                        if (rawName.includes('\n')) {
-                            rawName = rawName.split('\n')[0].trim();
-                        }
-                        results.push({
-                            public_identifier: publicId,
-                            profile_url: href.split('?')[0],
-                            name: rawName || publicId,
-                            headline: null,
-                            location: null
-                        });
-                    }
                 }
                 return results;
             })()

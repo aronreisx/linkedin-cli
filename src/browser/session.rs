@@ -48,6 +48,11 @@ impl BrowserSession {
             .arg("--window-size=1280,800")
             .user_data_dir(&user_data_dir);
 
+        if let Some(executable) = resolve_chromium_executable() {
+            info!(target: "browser", "Using Chromium executable at {}", executable.display());
+            builder = builder.chrome_executable(executable);
+        }
+
         if config.headed {
             builder = builder.with_head();
         }
@@ -149,4 +154,40 @@ impl BrowserSession {
         }
         Ok(())
     }
+}
+
+fn resolve_chromium_executable() -> Option<std::path::PathBuf> {
+    if let Ok(path) = std::env::var("CHROMIUM_PATH").or_else(|_| std::env::var("CHROME_PATH")) {
+        let p = std::path::PathBuf::from(path);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    let candidates = [
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/opt/homebrew/bin/chromium",
+        "/usr/local/bin/chromium",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ];
+
+    for candidate in candidates {
+        let p = std::path::PathBuf::from(candidate);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    if let Ok(output) = std::process::Command::new("which").arg("chromium").output() {
+        if output.status.success() {
+            let p_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let p = std::path::PathBuf::from(p_str);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+
+    None
 }

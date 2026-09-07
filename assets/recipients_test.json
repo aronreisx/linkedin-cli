@@ -1,0 +1,14 @@
+[
+  {
+    "handle": "jane-doe-sample",
+    "first_name": "Jane",
+    "topic": "Rust CLI tooling",
+    "attachment": "assets/test_attachment.png"
+  },
+  {
+    "handle": "john-doe-sample",
+    "first_name": "John",
+    "topic": "browser automation",
+    "attachment": "assets/sample_attachment.jpg"
+  }
+]

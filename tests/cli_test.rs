@@ -181,6 +181,33 @@ fn test_dry_run_zero_side_effects_message_send() {
 }
 
 #[test]
+fn test_dry_run_message_send_with_attachment() {
+    let mut cmd = Command::cargo_bin("linkedin").unwrap();
+    let assert = cmd
+        .args([
+            "message",
+            "send",
+            "john-doe-sample",
+            "--attachment",
+            "assets/test_attachment.png",
+            "--dry-run",
+            "-o",
+            "json",
+        ])
+        .assert()
+        .success();
+
+    let stdout_bytes = assert.get_output().stdout.as_slice();
+    let val: Value = serde_json::from_slice(stdout_bytes).expect("Valid JSON");
+    assert_eq!(val["resource"], "message");
+    assert_eq!(val["action"], "send");
+    assert_eq!(val["target"], "john-doe-sample");
+    assert_eq!(val["dry_run"], true);
+    assert_eq!(val["parameters"]["attachment"], "assets/test_attachment.png");
+    assert_eq!(val["parameters"]["action"], "send_direct_message_with_attachment");
+}
+
+#[test]
 fn test_dry_run_invite_mutations() {
     for (action_name, verb) in [
         ("accept", "accept"),

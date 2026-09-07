@@ -104,9 +104,6 @@ linkedin connection request alice-smith --note "Hi Alice, let's connect!"
 # List pending received invitations
 linkedin invite list --received
 
-# Interactive terminal triage for incoming invitations ([a]ccept, [i]gnore, [s]kip)
-linkedin invite triage --filter-has-note
-
 # Accept or ignore invitations directly
 linkedin invite accept alice-smith
 linkedin invite ignore bob-jones
@@ -120,8 +117,14 @@ linkedin message send alice-smith --text "Thanks for connecting!"
 # Inspect conversation thread history
 linkedin message thread alice-smith --limit 20
 
-# Filter inbox for unread conversations
+# Filter inbox for unread conversations (defaults to ~20 if --limit is omitted)
 linkedin inbox list --unread --limit 10
+
+# Cursor-based pagination: fetch page 2 using the token from page 1
+linkedin inbox list --cursor "<next_cursor_token>" --limit 20
+
+# Paginate through complete inbox history (respecting anti-bot human jitter)
+linkedin inbox list --all --limit 50
 
 # Batch messaging with template variables and rate-limiting jitter
 linkedin message send-batch \
@@ -150,17 +153,17 @@ linkedin post create --file post.md --media image.png --visibility public
 linkedin post stats urn:li:activity:1234567890
 ```
 
-### Draft Scheduler
+### Post Drafts & Scheduling
 ```bash
 # Stage a post draft with a scheduled publish date
-linkedin draft add --file announcement.md --schedule "2026-09-10T15:00:00Z"
+linkedin post draft add --file announcement.md --schedule "2026-09-10T15:00:00Z"
 
 # List staged drafts
-linkedin draft list --status scheduled
+linkedin post draft list --status scheduled
 
 # Export scheduled draft as a cron line or systemd timer
-linkedin draft export --id <draft-id> --format cron
-linkedin draft export --id <draft-id> --format systemd
+linkedin post draft export --id <draft-id> --format cron
+linkedin post draft export --id <draft-id> --format systemd
 ```
 
 ### Interactive Terminal UI (TUI)

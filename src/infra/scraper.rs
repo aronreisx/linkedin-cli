@@ -21,14 +21,18 @@ impl ChromiumProfileScraper {
 
     pub fn extract_public_id(handle_or_url: &str) -> String {
         let trimmed = handle_or_url.trim().trim_end_matches('/');
-        if let Some(pos) = trimmed.find("/in/") {
+        let raw_id = if let Some(pos) = trimmed.find("/in/") {
             let after = &trimmed[pos + 4..];
-            after.split('?').next().unwrap_or(after).split('#').next().unwrap_or(after).to_string()
+            let clean = after.split('?').next().unwrap_or(after).split('#').next().unwrap_or(after);
+            clean.split('/').next().unwrap_or(clean)
         } else if trimmed.starts_with("http") {
-            trimmed.split('/').next_back().unwrap_or(trimmed).to_string()
+            trimmed.split('/').next_back().unwrap_or(trimmed)
         } else {
-            trimmed.to_string()
-        }
+            trimmed
+        };
+        percent_encoding::percent_decode_str(raw_id)
+            .decode_utf8_lossy()
+            .to_string()
     }
 }
 
@@ -140,30 +144,74 @@ fn parse_voyager_profile(json_val: &Value, public_id: &str, profile_url: &str) -
     let mut last_name = None;
     let mut headline = None;
     let mut location = None;
+    let mut target_geo_urn = None;
     let mut connection_degree = None;
     let mut positions = Vec::new();
     let mut educations = Vec::new();
 
+    // Identify target member URN from collection elements if present
+    let target_urn = json_val
+        .get("data")
+        .and_then(|d| d.get("*elements"))
+        .and_then(|e| e.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let mut geo_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
     if let Some(included) = json_val.get("included").and_then(|i| i.as_array()) {
+        // First pass: collect Geo lookup table
+        for item in included {
+            let entity_type = item.get("$type").and_then(|t| t.as_str()).unwrap_or("");
+            if entity_type.contains("common.Geo") {
+                if let (Some(u), Some(loc_name)) = (
+                    item.get("entityUrn").and_then(|u| u.as_str()),
+                    item.get("defaultLocalizedName").and_then(|n| n.as_str()),
+                ) {
+                    geo_map.insert(u.to_string(), loc_name.to_string());
+                }
+            }
+        }
+
+        // Second pass: extract profile and associated entities
         for item in included {
             let entity_type = item.get("$type").and_then(|t| t.as_str()).unwrap_or("");
 
             if entity_type.contains("identity.profile.Profile") && !entity_type.contains("Position") && !entity_type.contains("Education") {
-                if let Some(u) = item.get("entityUrn").and_then(|u| u.as_str()) {
-                    urn = Some(u.to_string());
-                }
-                first_name = item.get("firstName").and_then(|f| f.as_str()).map(|s| s.to_string());
-                last_name = item.get("lastName").and_then(|l| l.as_str()).map(|s| s.to_string());
-                name = format!(
-                    "{} {}",
-                    first_name.as_deref().unwrap_or(""),
-                    last_name.as_deref().unwrap_or("")
-                )
-                .trim()
-                .to_string();
+                let item_urn = item.get("entityUrn").and_then(|u| u.as_str());
+                let item_pub_id = item.get("publicIdentifier").and_then(|p| p.as_str());
 
-                headline = item.get("headline").and_then(|h| h.as_str()).map(|s| s.to_string());
-                location = item.get("locationName").and_then(|l| l.as_str()).map(|s| s.to_string());
+                // Disambiguate target profile from current viewer/other included profiles
+                let is_target = match (&target_urn, item_urn, item_pub_id) {
+                    (Some(expected), Some(actual), _) if expected == actual => true,
+                    (_, _, Some(actual_pub)) if actual_pub.eq_ignore_ascii_case(public_id) => true,
+                    (None, _, _) if urn.is_none() => true,
+                    _ => false,
+                };
+
+                if is_target {
+                    if let Some(u) = item_urn {
+                        urn = Some(u.to_string());
+                    }
+                    first_name = item.get("firstName").and_then(|f| f.as_str()).map(|s| s.to_string());
+                    last_name = item.get("lastName").and_then(|l| l.as_str()).map(|s| s.to_string());
+                    name = format!(
+                        "{} {}",
+                        first_name.as_deref().unwrap_or(""),
+                        last_name.as_deref().unwrap_or("")
+                    )
+                    .trim()
+                    .to_string();
+
+                    headline = item.get("headline").and_then(|h| h.as_str()).map(|s| s.to_string());
+                    location = item.get("locationName").and_then(|l| l.as_str()).map(|s| s.to_string());
+                    target_geo_urn = item
+                        .get("geoLocation")
+                        .and_then(|g| g.get("geoUrn").or_else(|| g.get("*geo")))
+                        .and_then(|u| u.as_str())
+                        .map(|s| s.to_string());
+                }
             } else if entity_type.contains("identity.profile.Position") {
                 let title = item.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string();
                 let company_name = item.get("companyName").and_then(|c| c.as_str()).unwrap_or("").to_string();
@@ -210,6 +258,13 @@ fn parse_voyager_profile(json_val: &Value, public_id: &str, profile_url: &str) -
         }
     }
 
+    // Resolve location from Geo table if locationName is null
+    if location.is_none() {
+        if let Some(ref g_urn) = target_geo_urn {
+            location = geo_map.get(g_urn).cloned();
+        }
+    }
+
     if name.is_empty() {
         name = public_id.to_string();
     }
@@ -240,4 +295,30 @@ fn parse_date_range(v: &Value) -> DateRange {
         month: e.get("month").and_then(|m| m.as_u64()).map(|m| m as u32),
     });
     DateRange { start, end }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_public_id_variants() {
+        assert_eq!(ChromiumProfileScraper::extract_public_id("john-doe"), "john-doe");
+        assert_eq!(
+            ChromiumProfileScraper::extract_public_id("https://www.linkedin.com/in/franciscojmguedes/en"),
+            "franciscojmguedes"
+        );
+        assert_eq!(
+            ChromiumProfileScraper::extract_public_id("https://www.linkedin.com/in/in%C3%AAsloureiro21/en/"),
+            "inêsloureiro21"
+        );
+        assert_eq!(
+            ChromiumProfileScraper::extract_public_id("https://www.linkedin.com/in/someone/?miniProfileUrn=xyz#details"),
+            "someone"
+        );
+        assert_eq!(
+            ChromiumProfileScraper::extract_public_id("https://www.linkedin.com/in/user-name//"),
+            "user-name"
+        );
+    }
 }

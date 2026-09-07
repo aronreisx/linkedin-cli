@@ -34,3 +34,24 @@ Toolchain is strictly Rust. MCP execution is handled externally by the local cli
 - **Account Safety**: During development tests and live interactions, exercise extreme caution and avoid aggressive or repetitive automation to prevent account flagging or permanent bans.
 - **Pacing & Delays**: Always enforce human-paced jitter between requests and interactions. Never disable or bypass jitter for convenience in testing.
 - **Safe Development Testing**: Prefer non-destructive read operations (`whoami`, `status`, isolated `profile` queries) over write operations (`connect`, bulk `message`, `invites --withdraw`). Avoid tight loops or hammering endpoints.
+
+## Debugging & Troubleshooting Instructions
+- **Diagnostic Logging**:
+  - Operational logs route to `stderr` via `tracing`. Enable detailed logs with `RUST_LOG=debug` or scope to specific modules (e.g. `RUST_LOG=linkedin=debug,contact=debug,scraper=debug`).
+  - Keep `stdout` dedicated exclusively to structured output (`--json`, `--ndjson`, `--table`, `--tsv`).
+- **In-Process Telemetry & Diagnostic Flags (`--raw`)**:
+  - Always check `--raw --json` on subcommands (`profile contact <handle> --raw --json`, `profile get <handle> --raw --json`) to inspect the raw data structure returned by LinkedIn before UI filtering.
+  - When debugging DOM scraping issues, inject diagnostic fields into in-page JavaScript evaluation payloads (e.g., `_debug_modal_text`, `_debug_modal_tag`, `_debug_anchors`) rather than blindly guessing CSS selectors.
+- **Remote DevTools & Visual Troubleshooting**:
+  - For visual checkpoints (CAPTCHA, 2FA prompt screens, bot challenges, or session drops), run `mise run run:headed` or use `mise run run:debug` to launch Chromium with `--remote-debugging-port=9222`.
+  - Use the Chrome DevTools MCP tools (`list_pages`, `take_screenshot`, `evaluate_script`) on port 9222 to inspect live page layout, DOM state, and network responses out-of-band.
+- **LinkedIn Frontend Gotchas & Patterns**:
+  - **SDUI Lazy Hydration**: LinkedIn's SDUI renders empty container shells (e.g. `<dialog data-testid="dialog">`) before resolving underlying GraphQL payloads. Never assume an element contains data immediately upon matching a selector; wait until child links, specific label text, or meaningful body length (> 60 chars) populate.
+  - **Redirect URL Masking**: Outbound links in modals and profiles are wrapped with `https://www.linkedin.com/redir/redirect?url=...`. Always decode the `url` query parameter rather than filtering them out as `linkedin.com` links.
+  - **Voyager REST Deprecations (HTTP 410)**: Legacy `/voyager/api/` endpoints (such as `/profileContactInfo`) may return HTTP 410 Gone. Always maintain a resilient fallback to in-page overlay navigation and DOM extraction.
+  - **Profile Entity Ambiguity**: Voyager payloads often bundle both the authenticated viewer and the queried profile in the `included` array. Always verify `publicIdentifier == target_id` to avoid returning the viewer's profile instead of the target.
+- **Verification Workflow**:
+  - 1. `cargo clippy -- -D warnings` (Strict linter; no warnings allowed).
+  - 2. `cargo test` (Ensure all unit, domain, and integration tests pass).
+  - 3. Run non-destructive live smoke tests with `--headed` and `-o json` (e.g. `profile get <handle>`, `profile contact <handle>`).
+

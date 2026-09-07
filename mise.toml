@@ -12,16 +12,18 @@ run = "cargo run -- --headed"
 [tasks."run:debug"]
 description = "Launch Chrome/Chromium with remote debugging port 9222 for DevTools/MCP inspection"
 run = """
-if [ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then
-  CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-elif command -v google-chrome >/dev/null 2>&1; then
-  CHROME="google-chrome"
+if [ -x "/Applications/Chromium.app/Contents/MacOS/Chromium" ]; then
+  CHROME="/Applications/Chromium.app/Contents/MacOS/Chromium"
 elif command -v chromium >/dev/null 2>&1; then
   CHROME="chromium"
 elif command -v chromium-browser >/dev/null 2>&1; then
   CHROME="chromium-browser"
+elif [ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then
+  CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+elif command -v google-chrome >/dev/null 2>&1; then
+  CHROME="google-chrome"
 else
-  echo "Error: Neither Google Chrome nor Chromium was found on this system." >&2
+  echo "Error: Chromium was not found on this system." >&2
   exit 1
 fi
 

@@ -124,6 +124,40 @@ fn test_draft_systemd_unit_generation() -> Result<(), Box<dyn std::error::Error>
 
 #[test]
 fn test_cli_draft_add_and_export_dry_run() {
+    // 1. Test canonical `linkedin post draft` subcommand
+    let mut cmd_post_add = Command::cargo_bin("linkedin").expect("linkedin binary exists");
+    cmd_post_add
+        .args([
+            "post", "draft", "add",
+            "--text", "Launching new Rust systems tool!",
+            "--schedule", "2026-09-07T10:00:00Z",
+            "--dry-run",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"dry_run\": true"))
+        .stdout(predicates::str::contains("\"resource\": \"post\""))
+        .stdout(predicates::str::contains("\"action\": \"draft_add\""))
+        .stdout(predicates::str::contains("2026-09-07T10:00:00Z"));
+
+    let mut cmd_post_export = Command::cargo_bin("linkedin").expect("linkedin binary exists");
+    cmd_post_export
+        .args([
+            "post", "draft", "export",
+            "--id", "draft-1234",
+            "--format", "cron",
+            "--dry-run",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"dry_run\": true"))
+        .stdout(predicates::str::contains("\"resource\": \"post\""))
+        .stdout(predicates::str::contains("\"action\": \"draft_export\""))
+        .stdout(predicates::str::contains("draft-1234"));
+
+    // 2. Test backward-compatible `linkedin draft` alias
     let mut cmd_add = Command::cargo_bin("linkedin").expect("linkedin binary exists");
     cmd_add
         .args([

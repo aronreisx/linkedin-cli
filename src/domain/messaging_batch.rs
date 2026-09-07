@@ -15,6 +15,8 @@ pub struct RenderedMessage {
     pub recipient: String,
     pub text: String,
     pub utf16_len: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -65,10 +67,18 @@ pub fn render_batch_templates(
 
         let utf16_len = text.encode_utf16().count();
 
+        let attachment = recipient_val
+            .get("attachment")
+            .or_else(|| recipient_val.get("file"))
+            .or_else(|| recipient_val.get("media"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         rendered.push(RenderedMessage {
             recipient: recipient_id,
             text,
             utf16_len,
+            attachment,
         });
     }
 

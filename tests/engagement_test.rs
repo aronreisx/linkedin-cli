@@ -1,171 +1,16 @@
 use std::io::Write;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use assert_cmd::Command;
-use async_trait::async_trait;
 use serde_json::json;
 use tempfile::NamedTempFile;
 
 use linkedin::domain::{
     calculate_dispatch_jitter, check_content_variance, render_batch_templates,
-    triage_invitations, validate_batch_limits, Invitation, InvitationManager, TriageAction,
+    validate_batch_limits,
 };
 use linkedin::errors::AppError;
-use linkedin::infra::MockTriageReader;
-
-// --- Mock Invitation Manager for Triage Tests ---
-
-#[derive(Default, Clone)]
-struct MockInvitationManager {
-    pub accepted_calls: Arc<AtomicUsize>,
-    pub ignored_calls: Arc<AtomicUsize>,
-}
-
-#[async_trait]
-impl InvitationManager for MockInvitationManager {
-    async fn list_sent_invitations(&self, _scroll: u32, _limit: Option<usize>) -> Result<Vec<Invitation>, AppError> {
-        Ok(vec![])
-    }
-
-    async fn list_received_invitations(&self, _scroll: u32, _limit: Option<usize>) -> Result<Vec<Invitation>, AppError> {
-        Ok(vec![])
-    }
-
-    async fn withdraw_invitation(&self, _handle_or_url: &str) -> Result<bool, AppError> {
-        Ok(true)
-    }
-
-    async fn accept_invitation(&self, _handle_or_url: &str) -> Result<bool, AppError> {
-        self.accepted_calls.fetch_add(1, Ordering::SeqCst);
-        Ok(true)
-    }
-
-    async fn ignore_invitation(&self, _handle_or_url: &str) -> Result<bool, AppError> {
-        self.ignored_calls.fetch_add(1, Ordering::SeqCst);
-        Ok(true)
-    }
-}
-
-fn sample_invitations() -> Vec<Invitation> {
-    vec![
-        Invitation {
-            profile_url: "https://www.linkedin.com/in/recruiter-dave/".to_string(),
-            public_identifier: "recruiter-dave".to_string(),
-            name: Some("Dave Recruiter".to_string()),
-            headline: Some("Tech Recruiter".to_string()),
-            sent_or_received_at: None,
-            note: Some("Great profile, let's connect!".to_string()),
-        },
-        Invitation {
-            profile_url: "https://www.linkedin.com/in/engineer-eve/".to_string(),
-            public_identifier: "engineer-eve".to_string(),
-            name: Some("Eve Engineer".to_string()),
-            headline: Some("Rust Developer".to_string()),
-            sent_or_received_at: None,
-            note: None,
-        },
-        Invitation {
-            profile_url: "https://www.linkedin.com/in/pm-bob/".to_string(),
-            public_identifier: "pm-bob".to_string(),
-            name: Some("Bob PM".to_string()),
-            headline: Some("Product Manager".to_string()),
-            sent_or_received_at: None,
-            note: Some("Looking for collaborators".to_string()),
-        },
-        Invitation {
-            profile_url: "https://www.linkedin.com/in/founder-charlie/".to_string(),
-            public_identifier: "founder-charlie".to_string(),
-            name: Some("Charlie Founder".to_string()),
-            headline: Some("Founder @ Startup".to_string()),
-            sent_or_received_at: None,
-            note: None,
-        },
-    ]
-}
 
 // =========================================================================
-// 1. Interactive Triage Tests
-// =========================================================================
-
-#[tokio::test]
-async fn test_interactive_triage_actions_dispatch() -> Result<(), Box<dyn std::error::Error>> {
-    let queue = sample_invitations();
-    let manager = MockInvitationManager::default();
-
-    // Decisions: Accept first, Ignore second, Skip third, Quit on fourth
-    let decisions = vec![
-        TriageAction::Accept,
-        TriageAction::Ignore,
-        TriageAction::Skip,
-        TriageAction::Quit,
-    ];
-    let mut reader = MockTriageReader::new(decisions);
-
-    let result = triage_invitations(&queue, &mut reader, &manager, false).await?;
-
-    assert_eq!(result.total_reviewed, 3);
-    assert_eq!(result.accepted, 1);
-    assert_eq!(result.ignored, 1);
-    assert_eq!(result.skipped, 1);
-    assert!(result.quit_early);
-
-    // Verify manager mutations occurred
-    assert_eq!(manager.accepted_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(manager.ignored_calls.load(Ordering::SeqCst), 1);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_interactive_triage_dry_run_zero_side_effects() -> Result<(), Box<dyn std::error::Error>> {
-    let queue = sample_invitations();
-    let manager = MockInvitationManager::default();
-
-    // Decisions: Accept first, Ignore second
-    let decisions = vec![
-        TriageAction::Accept,
-        TriageAction::Ignore,
-    ];
-    let mut reader = MockTriageReader::new(decisions);
-
-    // Run in dry-run mode
-    let result = triage_invitations(&queue[..2], &mut reader, &manager, true).await?;
-
-    assert_eq!(result.total_reviewed, 2);
-    assert_eq!(result.accepted, 1);
-    assert_eq!(result.ignored, 1);
-    assert!(!result.quit_early);
-
-    // Assert ZERO side effects on manager
-    assert_eq!(manager.accepted_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(manager.ignored_calls.load(Ordering::SeqCst), 0);
-
-    Ok(())
-}
-
-#[test]
-fn test_cli_invite_triage_dry_run() {
-    let mut cmd = Command::cargo_bin("linkedin").expect("binary linkedin exists");
-    cmd.args(["invite", "triage", "--dry-run", "--json"])
-        .assert()
-        .success()
-        .stdout(predicates::str::contains("\"dry_run\": true"))
-        .stdout(predicates::str::contains("\"resource\": \"invite\""))
-        .stdout(predicates::str::contains("\"action\": \"triage\""));
-}
-
-#[test]
-fn test_cli_invite_triage_filter_note_dry_run() {
-    let mut cmd = Command::cargo_bin("linkedin").expect("binary linkedin exists");
-    cmd.args(["invite", "triage", "--filter-has-note", "--dry-run", "--json"])
-        .assert()
-        .success()
-        .stdout(predicates::str::contains("\"filter_has_note\": true"))
-        .stdout(predicates::str::contains("\"queue_size\": 1"));
-}
-
-// =========================================================================
-// 2. Safe Batch Messaging Tests
+// Safe Batch Messaging Tests
 // =========================================================================
 
 #[test]
@@ -195,16 +40,19 @@ fn test_safe_messaging_content_variance_check() -> Result<(), Box<dyn std::error
             recipient: "alice".to_string(),
             text: "Hi Alice, huge fan of your async Rust work at Acme!".to_string(),
             utf16_len: 52,
+            attachment: None,
         },
         linkedin::domain::RenderedMessage {
             recipient: "bob".to_string(),
             text: "Greetings Bob, would love to connect and discuss Kubernetes scaling.".to_string(),
             utf16_len: 68,
+            attachment: None,
         },
         linkedin::domain::RenderedMessage {
             recipient: "carol".to_string(),
             text: "Hey Carol! Noticed your recent publication on distributed transactions.".to_string(),
             utf16_len: 71,
+            attachment: None,
         },
     ];
     let report_diverse = check_content_variance(&diverse_messages)?;
@@ -218,16 +66,19 @@ fn test_safe_messaging_content_variance_check() -> Result<(), Box<dyn std::error
             recipient: "user1".to_string(),
             text: "Hello, check out our new exciting crypto platform!".to_string(),
             utf16_len: 51,
+            attachment: None,
         },
         linkedin::domain::RenderedMessage {
             recipient: "user2".to_string(),
             text: "Hello, check out our new exciting crypto platform!".to_string(),
             utf16_len: 51,
+            attachment: None,
         },
         linkedin::domain::RenderedMessage {
             recipient: "user3".to_string(),
             text: "Hello, check out our new exciting crypto platform!".to_string(),
             utf16_len: 51,
+            attachment: None,
         },
     ];
     let report_spam = check_content_variance(&spam_messages)?;
@@ -300,6 +151,32 @@ fn test_cli_message_send_batch_dry_run() -> Result<(), Box<dyn std::error::Error
     .stdout(predicates::str::contains("\"dry_run\": true"))
     .stdout(predicates::str::contains("\"action\": \"send_batch\""))
     .stdout(predicates::str::contains("Systems Co"));
+
+    Ok(())
+}
+
+#[test]
+fn test_cli_message_send_batch_attachments_dry_run() -> Result<(), Box<dyn std::error::Error>> {
+    let mut tmp_recipients = NamedTempFile::new()?;
+    let recipients_json = json!([
+        { "recipient": "alice", "name": "Alice", "attachment": "assets/alice_resume.pdf" },
+        { "recipient": "bob", "name": "Bob" }
+    ]);
+    tmp_recipients.write_all(recipients_json.to_string().as_bytes())?;
+
+    let mut cmd = Command::cargo_bin("linkedin")?;
+    cmd.args([
+        "message", "send-batch",
+        "--template", "Hi {{ name }}!",
+        "--recipients", tmp_recipients.path().to_str().unwrap(),
+        "--attachment", "assets/default_deck.pdf",
+        "--dry-run",
+        "-o", "json",
+    ])
+    .assert()
+    .success()
+    .stdout(predicates::str::contains("assets/alice_resume.pdf"))
+    .stdout(predicates::str::contains("assets/default_deck.pdf"));
 
     Ok(())
 }

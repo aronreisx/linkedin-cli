@@ -40,6 +40,8 @@ minijinja = "2.0"
 ratatui = "0.29"
 rusqlite = { version = "0.32", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+percent-encoding = "2.3"
 
 [dev-dependencies]
 assert_cmd = "2.0"

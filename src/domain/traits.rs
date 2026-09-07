@@ -44,6 +44,12 @@ pub trait InvitationManager: Send + Sync {
 #[async_trait]
 pub trait MessagingService: Send + Sync {
     async fn send_direct_message(&self, handle_or_url: &str, text: &str) -> Result<bool, AppError>;
+    async fn send_direct_message_with_attachment(
+        &self,
+        handle_or_url: &str,
+        text: Option<&str>,
+        attachment: &std::path::Path,
+    ) -> Result<bool, AppError>;
     async fn get_thread(&self, handle_or_url: &str, limit: Option<usize>) -> Result<Vec<Message>, AppError>;
     async fn list_inbox(&self, filter: &InboxFilter, raw: bool) -> Result<(InboxResult, Option<Value>), AppError>;
 }

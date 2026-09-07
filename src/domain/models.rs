@@ -79,6 +79,10 @@ pub struct ContactInfo {
     pub websites: Vec<String>,
     #[serde(default)]
     pub twitter_handles: Vec<String>,
+    #[serde(default)]
+    pub birthday: Option<String>,
+    #[serde(default)]
+    pub connected: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -117,11 +121,24 @@ pub struct Invitation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MessageAttachment {
+    pub media_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Message {
     pub entity_urn: Option<String>,
     pub sender_urn: Option<String>,
     pub sender_name: Option<String>,
     pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<MessageAttachment>,
     pub delivered_at: Option<i64>,
     pub timestamp: Option<String>,
 }
@@ -161,6 +178,7 @@ pub struct InboxFilter {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InboxResult {
     pub conversations: Vec<Conversation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
 }
 
