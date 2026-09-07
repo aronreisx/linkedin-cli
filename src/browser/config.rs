@@ -7,6 +7,7 @@ pub struct BrowserConfig {
     pub user_data_dir: Option<PathBuf>,
     pub cdp_url: Option<String>,
     pub session_name: String,
+    pub slow_mo_ms: Option<u64>,
 }
 
 impl Default for BrowserConfig {
@@ -16,6 +17,7 @@ impl Default for BrowserConfig {
             user_data_dir: None,
             cdp_url: None,
             session_name: "default".to_string(),
+            slow_mo_ms: None,
         }
     }
 }

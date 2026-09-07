@@ -61,6 +61,14 @@ This document tracks all CLI commands for `linkedin-cli-rust`. Commands that hav
 
 ---
 
+## 9. Session Management & Daemons (`session`)
+- [ ] `linkedin session open [--name <session>] [--headed]` — Launch and register a long-running supervisor daemon instance.
+- [ ] `linkedin session status [--name <session>]` — Check if a browser supervisor daemon is actively running and responsive.
+- [ ] `linkedin session close [--name <session>]` — Gracefully terminate a running session daemon and clear registry.
+- [ ] `linkedin session list` — List all registered supervisor sessions with PID and WebSocket endpoints.
+
+---
+
 ## 10. Terminal UI (`tui`)
 - [ ] `linkedin tui [--tab invitations|messages|drafts]` — Launch interactive split-pane terminal dashboard.
 

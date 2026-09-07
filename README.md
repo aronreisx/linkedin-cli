@@ -53,6 +53,7 @@ All commands support these global options:
 | `--session <name>` | Session profile to use (default: `$LINKEDIN_CLI_SESSION` or `default`) |
 | `--user-data-dir <path>` | Custom browser user data directory |
 | `--cdp-url <url>` | Connect to an existing CDP instance (e.g. `http://127.0.0.1:9222`) |
+| `--slow-mo <ms>` | Additional delay in milliseconds between browser operations (env: `$LINKEDIN_SLOW_MO`) |
 
 ---
 
@@ -165,6 +166,22 @@ linkedin post draft list --status scheduled
 linkedin post draft export --id <draft-id> --format cron
 linkedin post draft export --id <draft-id> --format systemd
 ```
+
+### Browser Session Management & Daemons
+```bash
+# Launch a bound session supervisor daemon (blocking until SIGINT)
+linkedin session open --name work --headed
+
+# Check status of an active session daemon
+linkedin session status --name work
+
+# List all active registered supervisor sessions and their CDP WebSocket endpoints
+linkedin session list
+
+# Gracefully terminate an active session daemon
+linkedin session close --name work
+```
+Subsequent commands (e.g. `linkedin --session work profile get ...`) automatically detect the active daemon and fast-attach via CDP without launching new Chromium instances.
 
 ### Interactive Terminal UI (TUI)
 ```bash

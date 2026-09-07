@@ -11,11 +11,13 @@ use crate::errors::AppError;
 pub struct BrowserSession {
     browser: Arc<Mutex<Option<Browser>>>,
     is_remote: bool,
+    session_name: String,
+    slow_mo_ms: Option<u64>,
 }
 
 impl BrowserSession {
     pub async fn launch(config: &BrowserConfig) -> Result<Self, AppError> {
-        // If an explicit CDP websocket or port URL is provided, attach to it.
+        // 1. If an explicit CDP websocket or port URL is provided, attach to it.
         if let Some(ref cdp_url) = config.cdp_url {
             info!(target: "browser", "Connecting to existing CDP endpoint at {cdp_url}...");
             let (browser, mut handler) = Browser::connect(cdp_url)
@@ -33,10 +35,39 @@ impl BrowserSession {
             return Ok(Self {
                 browser: Arc::new(Mutex::new(Some(browser))),
                 is_remote: true,
+                session_name: config.session_name.clone(),
+                slow_mo_ms: config.slow_mo_ms,
             });
         }
 
-        // Otherwise launch a managed Chromium instance
+        // 2. Check for an active running session daemon in the registry
+        if let Some(active) = crate::browser::registry::find_active_session(&config.session_name) {
+            info!(target: "browser", "Attached to running session '{}' at {}", active.name, active.endpoint);
+            match Browser::connect(&active.endpoint).await {
+                Ok((browser, mut handler)) => {
+                    tokio::spawn(async move {
+                        while let Some(event) = handler.next().await {
+                            if let Err(e) = event {
+                                debug!(target: "browser", "CDP handler event error: {e}");
+                            }
+                        }
+                    });
+
+                    return Ok(Self {
+                        browser: Arc::new(Mutex::new(Some(browser))),
+                        is_remote: true,
+                        session_name: config.session_name.clone(),
+                        slow_mo_ms: config.slow_mo_ms,
+                    });
+                }
+                Err(e) => {
+                    warn!(target: "browser", "Failed to connect to active session '{}' ({e}); pruning stale entry and launching new instance...", active.name);
+                    let _ = crate::browser::registry::clear_session(&active.name);
+                }
+            }
+        }
+
+        // 3. Otherwise launch a managed Chromium instance
         let user_data_dir = config.resolve_user_data_dir();
         std::fs::create_dir_all(&user_data_dir).map_err(AppError::Io)?;
 
@@ -135,7 +166,30 @@ impl BrowserSession {
         Ok(Self {
             browser: browser_arc,
             is_remote: false,
+            session_name: config.session_name.clone(),
+            slow_mo_ms: config.slow_mo_ms,
         })
+    }
+
+    pub fn is_remote(&self) -> bool {
+        self.is_remote
+    }
+
+    pub fn session_name(&self) -> &str {
+        &self.session_name
+    }
+
+    pub async fn debug_ws_url(&self) -> Option<String> {
+        let lock = self.browser.lock().await;
+        lock.as_ref().map(|b| b.websocket_address().clone())
+    }
+
+    pub async fn pace(&self) {
+        if let Some(ms) = self.slow_mo_ms {
+            if ms > 0 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
+            }
+        }
     }
 
     pub async fn new_page(&self, url: &str) -> Result<Page, AppError> {
@@ -143,6 +197,7 @@ impl BrowserSession {
         let b = lock.as_ref().ok_or_else(|| AppError::Browser("Browser session is closed".to_string()))?;
         let page = b.new_page(url).await.map_err(|e| AppError::Browser(format!("Failed to open page: {e}")))?;
         crate::browser::stealth::apply_stealth(&page).await?;
+        self.pace().await;
         Ok(page)
     }
 

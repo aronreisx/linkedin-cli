@@ -21,8 +21,14 @@
       {
         "id": "browser-security",
         "label": "Browser & Security",
-        "focus": ["browser_session", "keyring_store", "infra_driver", "infra_services", "anti_bot_safety"],
+        "focus": ["browser_session", "keyring_store", "session_registry", "infra_driver", "infra_services", "anti_bot_safety"],
         "note": "Chromium process lifecycle, CDP stealth injection, OS keyring credentials, Gaussian human typing, and checkpoint tripwire."
+      },
+      {
+        "id": "session-daemon",
+        "label": "Session Daemon & Fast Attach",
+        "focus": ["main_cli", "browser_session", "session_registry", "infra_driver"],
+        "note": "Bound Chromium supervisor daemons, atomic session registry, fast CDP attach, and slow-mo pacing."
       },
       {
         "id": "domain-core",
@@ -90,6 +96,15 @@
       "size": [180, 64]
     },
     {
+      "id": "session_registry",
+      "type": "database",
+      "label": "Session Registry",
+      "sublabel": "src/browser/registry.rs",
+      "tag": "Atomic PID & CDP Registry",
+      "pos": [310, 450],
+      "size": [180, 64]
+    },
+    {
       "id": "infra_driver",
       "type": "backend",
       "label": "ChromiumDriver",
@@ -153,7 +168,7 @@
     {
       "kind": "region",
       "label": "Browser & Persistence",
-      "wraps": ["browser_session", "draft_store", "keyring_store"]
+      "wraps": ["browser_session", "draft_store", "keyring_store", "session_registry"]
     },
     {
       "kind": "region",
@@ -275,6 +290,15 @@
       "fromSide": "bottom",
       "toSide": "top",
       "labelDy": 18
+    },
+    {
+      "id": "keyring-to-registry",
+      "from": "keyring_store",
+      "to": "session_registry",
+      "label": "registers endpoint & PID",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 20
     }
   ],
   "cards": [
@@ -303,6 +327,16 @@
         "BrowserSession manages Chromium process lifecycle with clean SIGINT/SIGTERM termination traps",
         "CDP stealth script injection shims navigator.webdriver, window.chrome, WebGL vendor/renderer, and plugins",
         "Strict sandbox directory isolation ensures zero cross-profile cookie or storage leakage"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Session Supervisor & Fast Attach",
+      "items": [
+        "Session supervisor daemon (linkedin session open) binds background Chromium instances registered in ~/.linkedin-cli/sessions/",
+        "Client CLI commands detect active sessions and fast-attach via CDP WebSocket without launching new processes",
+        "Atomic registry with cross-platform PID liveness checks (kill -0) automatically prunes dead-process records",
+        "Configurable slow-mo pacing (--slow-mo <ms>) enforces micro-delay pacing across CDP automation workflows"
       ]
     },
     {

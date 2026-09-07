@@ -52,6 +52,10 @@ struct Cli {
     #[arg(long, global = true)]
     cdp_url: Option<String>,
 
+    /// Slow down CDP operations by the specified amount of milliseconds (pacing)
+    #[arg(long, global = true, env = "LINKEDIN_SLOW_MO")]
+    slow_mo: Option<u64>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -95,6 +99,9 @@ enum Commands {
     /// Local draft staging, scheduling, and export (deprecated alias: use 'linkedin post draft')
     #[command(hide = true)]
     Draft(DraftArgs),
+
+    /// Persistent browser supervisor daemon management
+    Session(SessionArgs),
 
     /// Launch interactive split-pane Terminal UI (TUI)
     Tui(TuiArgs),
@@ -446,6 +453,51 @@ enum DraftCommands {
 }
 
 #[derive(clap::Args, Debug)]
+struct SessionArgs {
+    #[command(subcommand)]
+    command: SessionCommands,
+}
+
+#[derive(Subcommand, Debug)]
+enum SessionCommands {
+    /// Launch a persistent browser supervisor daemon, bind it to a CDP endpoint, and keep running
+    Open {
+        /// Session profile name
+        #[arg(short, long, default_value = "default")]
+        name: String,
+
+        /// Port to bind the Chromium remote debugging endpoint to (default: 0 = auto-allocated)
+        #[arg(short, long, default_value = "0")]
+        port: u16,
+
+        /// Host address to bind the debugging endpoint to
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        /// Launch browser in headed (visible) mode
+        #[arg(long)]
+        headed: bool,
+    },
+
+    /// Show the status of a bound browser session daemon
+    Status {
+        /// Session profile name
+        #[arg(short, long, default_value = "default")]
+        name: String,
+    },
+
+    /// Close and terminate a running browser supervisor daemon
+    Close {
+        /// Session profile name
+        #[arg(short, long, default_value = "default")]
+        name: String,
+    },
+
+    /// List all registered browser supervisor daemon sessions
+    List,
+}
+
+#[derive(clap::Args, Debug)]
 struct TuiArgs {
     /// Initial active view tab (invitations, messages, drafts)
     #[arg(long, default_value = "invitations")]
@@ -626,6 +678,161 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
             let res = serde_json::json!({ "status": if removed { "deleted" } else { "not_found" }, "profile": name });
             render_data(&res, format, &format!("Removed profile '{name}' (existed: {removed})"))?;
             return Ok(());
+        }
+        Commands::Session(SessionArgs { command }) => {
+            match command {
+                SessionCommands::Open { name, port, host, headed } => {
+                    if cli.dry_run {
+                        let dry_run_action = DryRunAction {
+                            resource: "session".to_string(),
+                            action: "open".to_string(),
+                            target: Some(name.clone()),
+                            parameters: serde_json::json!({
+                                "name": name,
+                                "port": port,
+                                "host": host,
+                                "headed": headed,
+                            }),
+                            dry_run: true,
+                        };
+                        render_dry_run(dry_run_action, format)?;
+                        return Ok(());
+                    }
+
+                    if let Some(active) = linkedin::browser::find_active_session(name) {
+                        let res = serde_json::json!({
+                            "status": "already_running",
+                            "name": active.name,
+                            "endpoint": active.endpoint,
+                            "pid": active.pid,
+                            "created_at": active.created_at,
+                        });
+                        render_data(&res, format, &format!("Session '{name}' is already running at {} (PID: {})", active.endpoint, active.pid))?;
+                        return Ok(());
+                    }
+
+                    let b_config = BrowserConfig {
+                        headed: *headed || cli.headed,
+                        user_data_dir: cli.user_data_dir.clone(),
+                        cdp_url: None,
+                        session_name: name.clone(),
+                        slow_mo_ms: cli.slow_mo,
+                    };
+
+                    tracing::info!(target: "session", "Launching supervisor daemon session '{name}'...");
+                    let session = BrowserSession::launch(&b_config).await?;
+                    let ws_url = session.debug_ws_url().await.unwrap_or_default();
+                    let pid = std::process::id();
+                    let _entry = linkedin::browser::write_session(name, &ws_url, pid)?;
+
+                    let _page = session.new_page("https://www.linkedin.com/feed/").await?;
+                    println!("{ws_url}");
+                    eprintln!("Session '{name}' bound at {ws_url} (PID: {pid}). Press Ctrl+C to terminate.");
+
+                    // Block until termination signal
+                    tokio::select! {
+                        _ = tokio::signal::ctrl_c() => {
+                            eprintln!("Received SIGINT, closing session '{name}'...");
+                        }
+                    }
+                    let _ = linkedin::browser::clear_session(name);
+                    session.close().await?;
+                    eprintln!("Session '{name}' closed cleanly.");
+                    return Ok(());
+                }
+                SessionCommands::Status { name } => {
+                    if cli.dry_run {
+                        let dry_run_action = DryRunAction {
+                            resource: "session".to_string(),
+                            action: "status".to_string(),
+                            target: Some(name.clone()),
+                            parameters: serde_json::json!({ "name": name }),
+                            dry_run: true,
+                        };
+                        render_dry_run(dry_run_action, format)?;
+                        return Ok(());
+                    }
+
+                    let res = if let Some(entry) = linkedin::browser::find_active_session(name) {
+                        serde_json::json!({
+                            "status": "active",
+                            "name": entry.name,
+                            "endpoint": entry.endpoint,
+                            "pid": entry.pid,
+                            "created_at": entry.created_at,
+                            "alive": true,
+                        })
+                    } else {
+                        serde_json::json!({
+                            "status": "inactive",
+                            "name": name,
+                            "alive": false,
+                        })
+                    };
+                    render_data(&res, format, &format!("Session '{name}' Status"))?;
+                    return Ok(());
+                }
+                SessionCommands::Close { name } => {
+                    if cli.dry_run {
+                        let dry_run_action = DryRunAction {
+                            resource: "session".to_string(),
+                            action: "close".to_string(),
+                            target: Some(name.clone()),
+                            parameters: serde_json::json!({ "name": name }),
+                            dry_run: true,
+                        };
+                        render_dry_run(dry_run_action, format)?;
+                        return Ok(());
+                    }
+
+                    let res = if let Some(entry) = linkedin::browser::read_session(name) {
+                        let terminated = linkedin::browser::registry::terminate_pid(entry.pid);
+                        let _ = linkedin::browser::clear_session(name);
+                        serde_json::json!({
+                            "status": "closed",
+                            "name": name,
+                            "pid": entry.pid,
+                            "signal_sent": terminated,
+                        })
+                    } else {
+                        serde_json::json!({
+                            "status": "not_found",
+                            "name": name,
+                        })
+                    };
+                    render_data(&res, format, &format!("Closed session '{name}'"))?;
+                    return Ok(());
+                }
+                SessionCommands::List => {
+                    if cli.dry_run {
+                        let dry_run_action = DryRunAction {
+                            resource: "session".to_string(),
+                            action: "list".to_string(),
+                            target: None,
+                            parameters: serde_json::json!({}),
+                            dry_run: true,
+                        };
+                        render_dry_run(dry_run_action, format)?;
+                        return Ok(());
+                    }
+
+                    let sessions = linkedin::browser::list_sessions()?;
+                    let mut items = Vec::new();
+                    for s in sessions {
+                        let alive = linkedin::browser::registry::is_pid_alive(s.pid);
+                        items.push(serde_json::json!({
+                            "name": s.name,
+                            "pid": s.pid,
+                            "endpoint": s.endpoint,
+                            "created_at": s.created_at,
+                            "status": if alive { "active" } else { "stale" },
+                        }));
+                    }
+                    let res = serde_json::json!(items);
+                    render_data(&res, format, "Registered Browser Sessions")?;
+                    return Ok(());
+                }
+            }
         }
         Commands::Post(PostArgs { command: PostCommands::Create { file, media, visibility } }) => {
             let content = std::fs::read_to_string(file)
@@ -990,6 +1197,7 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
         user_data_dir: cli.user_data_dir,
         cdp_url: cli.cdp_url,
         session_name: cli.session.clone(),
+        slow_mo_ms: cli.slow_mo,
     };
 
     let session = BrowserSession::launch(&browser_config).await?;
@@ -1501,6 +1709,7 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
         | Commands::Post(..)
         | Commands::Draft(..)
         | Commands::Tui(..)
+        | Commands::Session(..)
         | Commands::Auth(AuthArgs {
             command: AuthCommands::Add { .. }
                 | AuthCommands::List
