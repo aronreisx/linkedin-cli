@@ -44,3 +44,11 @@ run = "cargo clippy -- -D warnings"
 [tasks.test]
 description = "Run test suite"
 run = "cargo test"
+
+[tasks.build]
+description = "Build release binary"
+run = "cargo build --release"
+
+[tasks.install]
+description = "Build and install binary globally"
+run = "cargo install --path . --force"
