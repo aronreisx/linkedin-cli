@@ -894,7 +894,8 @@ impl MessagingService for ChromiumMessagingService {
 }
 
 fn parse_conversation_element(elem: &Value, self_profile: Option<&SelfProfile>) -> Conversation {
-    let entity_urn = elem.get("entityUrn").and_then(|u| u.as_str()).unwrap_or("").to_string();
+    let raw_entity_urn = elem.get("entityUrn").and_then(|u| u.as_str()).unwrap_or("");
+    let entity_urn = extract_thread_id(raw_entity_urn).unwrap_or_else(|| raw_entity_urn.to_string());
     let read = elem.get("read").and_then(|r| r.as_bool());
     let unread_count = elem.get("unreadCount").and_then(|u| u.as_u64()).map(|u| u as u32);
     let last_activity_at = elem.get("lastActivityAt").and_then(|l| l.as_i64());

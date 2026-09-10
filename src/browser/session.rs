@@ -213,7 +213,7 @@ impl BrowserSession {
                 };
                 if tokio::time::timeout(tokio::time::Duration::from_secs(3), close_fut).await.is_err() {
                     warn!(target: "browser", "Timed out waiting for Chromium to close; force-killing process...");
-                    let _ = b.kill();
+                    let _ = b.kill().await;
                 }
             }
         }
