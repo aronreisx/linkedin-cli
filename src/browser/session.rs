@@ -70,6 +70,7 @@ impl BrowserSession {
         // 3. Otherwise launch a managed Chromium instance
         let user_data_dir = config.resolve_user_data_dir();
         std::fs::create_dir_all(&user_data_dir).map_err(AppError::Io)?;
+        cleanup_stale_singleton_lock(&user_data_dir);
 
         let mut builder = CdpBrowserConfig::builder()
             .arg("--disable-blink-features=AutomationControlled")
@@ -206,11 +207,45 @@ impl BrowserSession {
             let mut lock = self.browser.lock().await;
             if let Some(mut b) = lock.take() {
                 debug!(target: "browser", "Closing Chromium instance cleanly via CDP...");
-                let _ = b.close().await;
-                let _ = b.wait().await;
+                let close_fut = async {
+                    let _ = b.close().await;
+                    let _ = b.wait().await;
+                };
+                if tokio::time::timeout(tokio::time::Duration::from_secs(3), close_fut).await.is_err() {
+                    warn!(target: "browser", "Timed out waiting for Chromium to close; force-killing process...");
+                    let _ = b.kill();
+                }
             }
         }
         Ok(())
+    }
+}
+
+fn cleanup_stale_singleton_lock(user_data_dir: &std::path::Path) {
+    let lock_path = user_data_dir.join("SingletonLock");
+    if lock_path.is_symlink() || lock_path.exists() {
+        let is_stale = match std::fs::read_link(&lock_path) {
+            Ok(target) => {
+                let target_str = target.to_string_lossy();
+                if let Some(pid_str) = target_str.rsplit('-').next() {
+                    if let Ok(pid) = pid_str.parse::<u32>() {
+                        !crate::browser::registry::is_pid_alive(pid)
+                    } else {
+                        true
+                    }
+                } else {
+                    true
+                }
+            }
+            Err(_) => true,
+        };
+
+        if is_stale {
+            debug!(target: "browser", "Pruning stale Chromium singleton lock at {}", lock_path.display());
+            let _ = std::fs::remove_file(&lock_path);
+            let _ = std::fs::remove_file(user_data_dir.join("SingletonCookie"));
+            let _ = std::fs::remove_file(user_data_dir.join("SingletonSocket"));
+        }
     }
 }
 
