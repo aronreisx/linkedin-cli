@@ -24,39 +24,17 @@ impl ChromiumMessagingService {
     }
 
     async fn open_compose_box(&self, handle_or_url: &str) -> Result<String, AppError> {
-        let public_id = ChromiumProfileScraper::extract_public_id(handle_or_url);
-        info!(target: "messaging", "Opening compose box for {public_id}");
+        let thread_id_opt = extract_thread_id(handle_or_url);
+        let public_id = if let Some(ref tid) = thread_id_opt {
+            tid.clone()
+        } else {
+            ChromiumProfileScraper::extract_public_id(handle_or_url)
+        };
+        info!(target: "messaging", "Opening messaging target: {public_id}");
 
-        // 1. We need the target member URN. Scrape or lookup via Voyager.
-        let voyager_url = format!(
-            "https://www.linkedin.com/voyager/api/identity/dash/profiles?memberIdentity={public_id}&q=memberIdentity"
-        );
-
-        let mut target_urn = None;
-        if let Ok((status, ok, body)) = InPageTransport::fetch(&self.page, "GET", &voyager_url, &[], None, 15_000).await {
-            if ok && status == 200 {
-                if let Ok(val) = serde_json::from_str::<Value>(&body) {
-                    if let Some(included) = val.get("included").and_then(|i| i.as_array()) {
-                        for entity in included {
-                            if entity.get("$type").and_then(|t| t.as_str()).map(|s| s.contains("identity.profile.Profile")).unwrap_or(false) {
-                                let entity_pub_id = entity.get("publicIdentifier").and_then(|p| p.as_str()).unwrap_or("");
-                                if entity_pub_id.eq_ignore_ascii_case(&public_id) {
-                                    if let Some(u) = entity.get("entityUrn").and_then(|u| u.as_str()) {
-                                        target_urn = Some(u.to_string());
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. Open messaging compose page or direct profile message
-        if let Some(ref urn) = target_urn {
-            let encoded_urn = urlencoding_simple(urn);
-            let thread_url = format!("https://www.linkedin.com/messaging/thread/new/?recipient={encoded_urn}");
+        if let Some(ref tid) = thread_id_opt {
+            let thread_url = format!("https://www.linkedin.com/messaging/thread/{tid}/");
+            info!(target: "messaging", "Navigating directly to thread URL: {thread_url}");
             self.page
                 .goto(&thread_url)
                 .await
@@ -66,61 +44,113 @@ impl ChromiumMessagingService {
                 })?;
             crate::infra::tripwire::assert_no_tripwire(&self.page).await?;
         } else {
-            let profile_url = format!("https://www.linkedin.com/in/{public_id}/");
-            self.page
-                .goto(&profile_url)
-                .await
-                .map_err(|e| AppError::NavigationFailed {
-                    url: profile_url.clone(),
-                    reason: e.to_string(),
-                })?;
+            // 1. We need the target member URN. Scrape or lookup via Voyager.
+            let mut target_urn = if public_id.starts_with("ACoAA") {
+                Some(format!("urn:li:fsd_profile:{public_id}"))
+            } else {
+                None
+            };
 
-            crate::infra::tripwire::assert_no_tripwire(&self.page).await?;
-            human_jitter(&self.rule).await;
+            let voyager_url = format!(
+                "https://www.linkedin.com/voyager/api/identity/dash/profiles?memberIdentity={public_id}&q=memberIdentity"
+            );
 
-            let js_click_message = r#"
-                (() => {
-                    const buttons = Array.from(document.querySelectorAll('button, a'));
-                    const msgBtn = buttons.find(el => {
-                        const text = (el.innerText || '').trim();
-                        const aria = (el.getAttribute('aria-label') || '').trim();
-                        return text === 'Message' || aria.includes('Message');
+            if let Ok((status, ok, body)) = InPageTransport::fetch(&self.page, "GET", &voyager_url, &[], None, 15_000).await {
+                if ok && status == 200 {
+                    if let Ok(val) = serde_json::from_str::<Value>(&body) {
+                        if let Some(included) = val.get("included").and_then(|i| i.as_array()) {
+                            for entity in included {
+                                if entity.get("$type").and_then(|t| t.as_str()).map(|s| s.contains("identity.profile.Profile")).unwrap_or(false) {
+                                    let entity_pub_id = entity.get("publicIdentifier").and_then(|p| p.as_str()).unwrap_or("");
+                                    let entity_urn = entity.get("entityUrn").and_then(|u| u.as_str()).unwrap_or("");
+                                    if entity_pub_id.eq_ignore_ascii_case(&public_id)
+                                        || entity_urn.ends_with(&public_id)
+                                        || entity_urn == format!("urn:li:fsd_profile:{public_id}") {
+                                        if let Some(u) = entity.get("entityUrn").and_then(|u| u.as_str()) {
+                                            target_urn = Some(u.to_string());
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Open messaging compose page or direct profile message
+            if let Some(ref urn) = target_urn {
+                let encoded_urn = urlencoding_simple(urn);
+                let thread_url = format!("https://www.linkedin.com/messaging/thread/new/?recipient={encoded_urn}");
+                self.page
+                    .goto(&thread_url)
+                    .await
+                    .map_err(|e| AppError::NavigationFailed {
+                        url: thread_url.clone(),
+                        reason: e.to_string(),
+                    })?;
+                crate::infra::tripwire::assert_no_tripwire(&self.page).await?;
+            } else {
+                let profile_url = format!("https://www.linkedin.com/in/{public_id}/");
+                self.page
+                    .goto(&profile_url)
+                    .await
+                    .map_err(|e| AppError::NavigationFailed {
+                        url: profile_url.clone(),
+                        reason: e.to_string(),
+                    })?;
+
+                crate::infra::tripwire::assert_no_tripwire(&self.page).await?;
+                human_jitter(&self.rule).await;
+
+                let js_click_message = r#"
+                    (() => {
+                        const buttons = Array.from(document.querySelectorAll('button, a'));
+                        const msgBtn = buttons.find(el => {
+                            const text = (el.innerText || '').trim();
+                            const aria = (el.getAttribute('aria-label') || '').trim();
+                            return text === 'Message' || aria.includes('Message');
+                        });
+                        if (!msgBtn) return false;
+                        msgBtn.click();
+                        return true;
+                    })()
+                "#;
+
+                let clicked = self
+                    .page
+                    .evaluate(js_click_message)
+                    .await
+                    .map_err(|e| AppError::Cdp(e.to_string()))?
+                    .into_value::<bool>()
+                    .unwrap_or(false);
+
+                if !clicked {
+                    return Err(AppError::ElementNotFound {
+                        selector: format!("Message button on profile {public_id} (not a 1st degree connection or messaging unavailable)"),
                     });
-                    if (!msgBtn) return false;
-                    msgBtn.click();
-                    return true;
-                })()
-            "#;
-
-            let clicked = self
-                .page
-                .evaluate(js_click_message)
-                .await
-                .map_err(|e| AppError::Cdp(e.to_string()))?
-                .into_value::<bool>()
-                .unwrap_or(false);
-
-            if !clicked {
-                return Err(AppError::ElementNotFound {
-                    selector: format!("Message button on profile {public_id} (not a 1st degree connection or messaging unavailable)"),
-                });
+                }
             }
         }
 
         human_jitter(&self.rule).await;
 
-        // 3. Find and focus compose box in DOM
+        // 3. Find and focus compose box in DOM (or verify message list/thread container is loaded)
         let js_focus_compose = r#"
             (async () => {
                 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-                const findComposeBox = () => {
+                const findTarget = () => {
                     const selectors = [
                         'div[role="textbox"][aria-label*="message"i]',
                         'div.msg-form__contenteditable[role="textbox"]',
                         '.msg-form__message-texteditor div[role="textbox"]',
                         'div.msg-form__contenteditable',
-                        'div[contenteditable="true"]'
+                        'div[contenteditable="true"]',
+                        'ul.msg-s-message-list',
+                        '.msg-s-message-list-container',
+                        '.msg-s-scroll-container',
+                        '.msg-thread'
                     ];
                     for (const s of selectors) {
                         const el = document.querySelector(s);
@@ -129,24 +159,16 @@ impl ChromiumMessagingService {
                     return null;
                 };
 
-                let composeBox = null;
+                let targetEl = null;
                 for (let i = 0; i < 30; i++) {
-                    composeBox = findComposeBox();
-                    if (composeBox) break;
+                    targetEl = findTarget();
+                    if (targetEl) break;
                     await sleep(200);
                 }
 
-                if (!composeBox) return false;
+                if (!targetEl) return false;
 
-                try { composeBox.focus(); } catch(_) {}
-                try {
-                    const sel = window.getSelection();
-                    const range = document.createRange();
-                    range.selectNodeContents(composeBox);
-                    sel.removeAllRanges();
-                    sel.addRange(range);
-                } catch(_) {}
-
+                try { targetEl.focus(); } catch(_) {}
                 return true;
             })()
         "#;
@@ -161,7 +183,7 @@ impl ChromiumMessagingService {
 
         if !focused {
             return Err(AppError::ElementNotFound {
-                selector: format!("Message compose textbox for {public_id} (not accessible or requires InMail)"),
+                selector: format!("Message compose textbox or thread container for {public_id} (not accessible or requires InMail)"),
             });
         }
 
@@ -1007,4 +1029,54 @@ fn urlencoding_simple(s: &str) -> String {
         }
     }
     encoded
+}
+
+fn extract_thread_id(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed.contains("messaging/thread/") {
+        let part = trimmed.split("messaging/thread/").nth(1)?;
+        let tid = part.split('/').next()?.split('?').next()?;
+        if !tid.is_empty() {
+            return Some(tid.to_string());
+        }
+    }
+    if trimmed.contains("msg_conversation:") {
+        // e.g. urn:li:msg_conversation:(urn:li:fsd_profile:...,2-...)
+        let inner = trimmed
+            .strip_prefix("urn:li:msg_conversation:(")?
+            .strip_suffix(')')?;
+        for part in inner.split(',') {
+            let p = part.trim();
+            if p.starts_with("2-") {
+                return Some(p.to_string());
+            }
+        }
+    }
+    if trimmed.starts_with("2-") {
+        return Some(trimmed.to_string());
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_thread_id() {
+        assert_eq!(
+            extract_thread_id("2-YmI3YTUxOWMtNzEyOC00MmEzLTkyNjQtYzFkNjg0YTJiYTM3XzEwMA=="),
+            Some("2-YmI3YTUxOWMtNzEyOC00MmEzLTkyNjQtYzFkNjg0YTJiYTM3XzEwMA==".to_string())
+        );
+        assert_eq!(
+            extract_thread_id("urn:li:msg_conversation:(urn:li:fsd_profile:ACoAAB80j1QBzazFGzbzs4t2YniIZ1nfKlmm6PE,2-YWU0NTI2OTctYjQ0OC00MGNjLTg0NDEtOWZiYTQzZTI3MDRiXzEwMA==)"),
+            Some("2-YWU0NTI2OTctYjQ0OC00MGNjLTg0NDEtOWZiYTQzZTI3MDRiXzEwMA==".to_string())
+        );
+        assert_eq!(
+            extract_thread_id("https://www.linkedin.com/messaging/thread/2-YmI3YTUxOWMtNzEyOC00MmEzLTkyNjQtYzFkNjg0YTJiYTM3XzEwMA==/"),
+            Some("2-YmI3YTUxOWMtNzEyOC00MmEzLTkyNjQtYzFkNjg0YTJiYTM3XzEwMA==".to_string())
+        );
+        assert_eq!(extract_thread_id("iryna-ievtushenko"), None);
+        assert_eq!(extract_thread_id("ACoAADaXNhIBZUmfxGCT49oQk7kN8m3tdRhiTBE"), None);
+    }
 }
