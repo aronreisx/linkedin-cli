@@ -5,7 +5,7 @@ use tracing::{info, warn};
 
 use crate::browser::transport::InPageTransport;
 use crate::domain::models::{
-    Conversation, InboxFilter, InboxResult, InteractionRule, Message, Participant,
+    Conversation, InboxFilter, InboxResult, InteractionRule, Message, Participant, SelfProfile,
 };
 use crate::domain::traits::{LinkedInDriver, MessagingService};
 use crate::errors::AppError;
@@ -683,7 +683,7 @@ impl MessagingService for ChromiumMessagingService {
         // 1. Resolve mailbox URN
         let driver = ChromiumLinkedInDriver::new(self.page.clone(), self.rule.clone());
         let self_profile = driver.whoami().await?;
-        let mailbox_urn = self_profile.urn.unwrap_or_default();
+        let mailbox_urn = self_profile.urn.clone().unwrap_or_default();
         let encoded_mailbox = urlencoding_simple(&mailbox_urn);
 
         let query_id_first = "messengerConversations.0d5e6781bbee71c3e51c8843c6519f48";
@@ -710,7 +710,7 @@ impl MessagingService for ChromiumMessagingService {
                         .and_then(|d| d.get("messengerConversationsByCategoryQuery"));
                     if let Some(elements) = root_paged.and_then(|r| r.get("elements")).and_then(|e| e.as_array()) {
                         for elem in elements {
-                            let conv = parse_conversation_element(elem);
+                            let conv = parse_conversation_element(elem, Some(&self_profile));
                             if matches_inbox_filter(&conv, filter) {
                                 conversations.push(conv);
                             }
@@ -740,7 +740,7 @@ impl MessagingService for ChromiumMessagingService {
 
                     if let Some(elements) = root.and_then(|r| r.get("elements")).and_then(|e| e.as_array()) {
                         for elem in elements {
-                            let conv = parse_conversation_element(elem);
+                            let conv = parse_conversation_element(elem, Some(&self_profile));
                             if matches_inbox_filter(&conv, filter) {
                                 conversations.push(conv);
                             }
@@ -830,7 +830,7 @@ impl MessagingService for ChromiumMessagingService {
                                 break;
                             }
                             for elem in elements {
-                                let conv = parse_conversation_element(elem);
+                                let conv = parse_conversation_element(elem, Some(&self_profile));
                                 if matches_inbox_filter(&conv, filter) {
                                     conversations.push(conv);
                                 }
@@ -871,7 +871,7 @@ impl MessagingService for ChromiumMessagingService {
     }
 }
 
-fn parse_conversation_element(elem: &Value) -> Conversation {
+fn parse_conversation_element(elem: &Value, self_profile: Option<&SelfProfile>) -> Conversation {
     let entity_urn = elem.get("entityUrn").and_then(|u| u.as_str()).unwrap_or("").to_string();
     let read = elem.get("read").and_then(|r| r.as_bool());
     let unread_count = elem.get("unreadCount").and_then(|u| u.as_u64()).map(|u| u as u32);
@@ -891,12 +891,23 @@ fn parse_conversation_element(elem: &Value) -> Conversation {
             let headline = member.and_then(|m| m.get("headline").and_then(|h| h.get("text")).and_then(|t| t.as_str())).map(|s| s.to_string());
             let profile_url = member.and_then(|m| m.get("profileUrl").and_then(|u| u.as_str())).map(|s| s.to_string());
 
+            let is_self = if let Some(sp) = self_profile {
+                let match_urn = sp.urn.as_ref().map(|u| Some(u) == urn.as_ref()).unwrap_or(false);
+                let match_name = sp.full_name.as_ref().map(|n| Some(n) == name.as_ref()).unwrap_or(false);
+                let match_pub_id = sp.public_identifier.as_ref().map(|pub_id| {
+                    profile_url.as_ref().map(|u| u.contains(pub_id)).unwrap_or(false)
+                }).unwrap_or(false);
+                match_urn || match_name || match_pub_id
+            } else {
+                false
+            };
+
             participants.push(Participant {
                 urn,
                 name,
                 headline,
                 profile_url,
-                is_self: false,
+                is_self,
             });
         }
     }
