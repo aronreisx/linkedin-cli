@@ -55,18 +55,34 @@ impl ChromiumMessagingService {
                 "https://www.linkedin.com/voyager/api/identity/dash/profiles?memberIdentity={public_id}&q=memberIdentity"
             );
 
-            if let Ok((status, ok, body)) = InPageTransport::fetch(&self.page, "GET", &voyager_url, &[], None, 15_000).await {
+            if let Ok((status, ok, body)) =
+                InPageTransport::fetch(&self.page, "GET", &voyager_url, &[], None, 15_000).await
+            {
                 if ok && status == 200 {
                     if let Ok(val) = serde_json::from_str::<Value>(&body) {
                         if let Some(included) = val.get("included").and_then(|i| i.as_array()) {
                             for entity in included {
-                                if entity.get("$type").and_then(|t| t.as_str()).map(|s| s.contains("identity.profile.Profile")).unwrap_or(false) {
-                                    let entity_pub_id = entity.get("publicIdentifier").and_then(|p| p.as_str()).unwrap_or("");
-                                    let entity_urn = entity.get("entityUrn").and_then(|u| u.as_str()).unwrap_or("");
+                                if entity
+                                    .get("$type")
+                                    .and_then(|t| t.as_str())
+                                    .map(|s| s.contains("identity.profile.Profile"))
+                                    .unwrap_or(false)
+                                {
+                                    let entity_pub_id = entity
+                                        .get("publicIdentifier")
+                                        .and_then(|p| p.as_str())
+                                        .unwrap_or("");
+                                    let entity_urn = entity
+                                        .get("entityUrn")
+                                        .and_then(|u| u.as_str())
+                                        .unwrap_or("");
                                     if entity_pub_id.eq_ignore_ascii_case(&public_id)
                                         || entity_urn.ends_with(&public_id)
-                                        || entity_urn == format!("urn:li:fsd_profile:{public_id}") {
-                                        if let Some(u) = entity.get("entityUrn").and_then(|u| u.as_str()) {
+                                        || entity_urn == format!("urn:li:fsd_profile:{public_id}")
+                                    {
+                                        if let Some(u) =
+                                            entity.get("entityUrn").and_then(|u| u.as_str())
+                                        {
                                             target_urn = Some(u.to_string());
                                             break;
                                         }
@@ -81,7 +97,9 @@ impl ChromiumMessagingService {
             // 2. Open messaging compose page or direct profile message
             if let Some(ref urn) = target_urn {
                 let encoded_urn = urlencoding_simple(urn);
-                let thread_url = format!("https://www.linkedin.com/messaging/thread/new/?recipient={encoded_urn}");
+                let thread_url = format!(
+                    "https://www.linkedin.com/messaging/thread/new/?recipient={encoded_urn}"
+                );
                 self.page
                     .goto(&thread_url)
                     .await
@@ -190,9 +208,14 @@ impl ChromiumMessagingService {
         Ok(public_id)
     }
 
-    async fn click_send_and_verify(&self, public_id: &str, text: Option<&str>) -> Result<bool, AppError> {
+    async fn click_send_and_verify(
+        &self,
+        public_id: &str,
+        text: Option<&str>,
+    ) -> Result<bool, AppError> {
         let text_json = serde_json::to_string(&text).map_err(AppError::Json)?;
-        let js_send_and_verify = format!(r#"
+        let js_send_and_verify = format!(
+            r#"
             (async ([msgText]) => {{
                 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -255,7 +278,8 @@ impl ChromiumMessagingService {
                     delivered
                 }};
             }})({text_json})
-        "#);
+        "#
+        );
 
         let eval_res = self
             .page
@@ -267,7 +291,10 @@ impl ChromiumMessagingService {
         let sent = val.get("sent").and_then(|s| s.as_bool()).unwrap_or(false);
 
         if !sent {
-            let reason = val.get("reason").and_then(|r| r.as_str()).unwrap_or("Failed to activate Send button");
+            let reason = val
+                .get("reason")
+                .and_then(|r| r.as_str())
+                .unwrap_or("Failed to activate Send button");
             return Err(AppError::ElementNotFound {
                 selector: format!("Message send action for {public_id}: {reason}"),
             });
@@ -378,7 +405,8 @@ impl MessagingService for ChromiumMessagingService {
             .map_err(|e| AppError::Cdp(e.to_string()))?;
 
         use chromiumoxide::cdp::browser_protocol::dom::SetFileInputFilesParams;
-        let mut set_files = SetFileInputFilesParams::new(vec![abs_path.to_string_lossy().to_string()]);
+        let mut set_files =
+            SetFileInputFilesParams::new(vec![abs_path.to_string_lossy().to_string()]);
         set_files.backend_node_id = Some(file_input.backend_node_id);
         set_files.object_id = Some(file_input.remote_object_id.clone());
 
@@ -465,7 +493,11 @@ impl MessagingService for ChromiumMessagingService {
         self.click_send_and_verify(&public_id, text).await
     }
 
-    async fn get_thread(&self, handle_or_url: &str, limit: Option<usize>) -> Result<Vec<Message>, AppError> {
+    async fn get_thread(
+        &self,
+        handle_or_url: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<Message>, AppError> {
         let public_id = self.open_compose_box(handle_or_url).await?;
         info!(target: "messaging", "Fetching thread messages for {public_id}");
 
@@ -476,9 +508,9 @@ impl MessagingService for ChromiumMessagingService {
                 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
                 const findScrollContainer = () => {{
-                    const list = document.querySelector('ul.msg-s-message-list, .msg-s-message-list-container, .msg-s-scroll-container');
-                    if (list) {{
-                        let cur = list;
+                    const eventEl = document.querySelector('li.msg-s-message-list__event, li.msg-s-event-listitem, li.msg-s-message-listitem');
+                    if (eventEl) {{
+                        let cur = eventEl.parentElement;
                         while (cur && cur !== document.body) {{
                             const style = window.getComputedStyle(cur);
                             if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && cur.scrollHeight > cur.clientHeight) {{
@@ -487,15 +519,28 @@ impl MessagingService for ChromiumMessagingService {
                             cur = cur.parentElement;
                         }}
                     }}
-                    return document.querySelector('.msg-s-message-list-container, .msg-s-scroll-container, .msg-thread, .msg-s-message-list');
+                    const candidates = Array.from(document.querySelectorAll('.msg-s-message-list-container, .msg-s-scroll-container, ul.msg-s-message-list, div[tabindex="-1"], .msg-thread'));
+                    for (const el of candidates) {{
+                        const style = window.getComputedStyle(el);
+                        if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {{
+                            return el;
+                        }}
+                    }}
+                    return null;
                 }};
 
-                // 1. Scroll up progressively to load older messages until targetLimit is reached or no more messages load
+                // Wait up to 5s for initial messages to render
+                for (let i = 0; i < 25; i++) {{
+                    const count = document.querySelectorAll('li.msg-s-message-list__event, li.msg-s-event-listitem, li.msg-s-message-listitem').length;
+                    if (count > 0) break;
+                    await sleep(200);
+                }}
+
                 let container = findScrollContainer();
                 let prevCount = 0;
                 let staleRounds = 0;
 
-                for (let round = 0; round < 25; round++) {{
+                for (let round = 0; round < 30; round++) {{
                     const currentEvents = Array.from(document.querySelectorAll('li.msg-s-message-list__event, li.msg-s-event-listitem, li.msg-s-message-listitem'))
                         .filter(el => {{
                             const body = el.querySelector('.msg-s-event-listitem__body, p, [class*="message-bubble"]');
@@ -508,7 +553,7 @@ impl MessagingService for ChromiumMessagingService {
 
                     if (currentEvents.length === prevCount && currentEvents.length > 0) {{
                         staleRounds++;
-                        if (staleRounds >= 3) {{
+                        if (staleRounds >= 4) {{
                             break;
                         }}
                     }} else {{
@@ -516,22 +561,35 @@ impl MessagingService for ChromiumMessagingService {
                         prevCount = currentEvents.length;
                     }}
 
-                    if (!container) container = findScrollContainer();
+                    container = findScrollContainer() || container;
                     if (container) {{
-                        container.scrollTop = 0;
+                        // Support both reversed flex containers (negative scrollTop) and standard containers
+                        if (container.scrollTop < 0) {{
+                            container.scrollTop = -container.scrollHeight;
+                        }} else {{
+                            container.scrollTop = 0;
+                        }}
                         container.dispatchEvent(new Event('scroll', {{ bubbles: true }}));
+                        container.dispatchEvent(new WheelEvent('wheel', {{ deltaY: -500, bubbles: true }}));
+                    }}
+                    if (currentEvents.length > 0) {{
+                        try {{ currentEvents[0].scrollIntoView({{ block: 'start', behavior: 'instant' }}); }} catch(_) {{}}
                     }}
 
-                    const loadMoreBtn = Array.from(document.querySelectorAll('button')).find(b => {{
+                    const loadMoreBtn = Array.from(document.querySelectorAll('button, a, [role="button"]')).find(b => {{
                         const t = (b.innerText || '').toLowerCase();
-                        return t.includes('earlier') || t.includes('more messages');
+                        return t.includes('earlier') || t.includes('more messages') || t.includes('load more');
                     }});
                     if (loadMoreBtn && !loadMoreBtn.disabled) {{
                         try {{ loadMoreBtn.click(); }} catch(_) {{}}
                     }}
 
-                    await sleep(600);
+                    await sleep(1500);
                 }}
+
+
+
+
 
                 // 2. Select top-level list items only (to prevent duplicate matching with child elements)
                 let msgItems = Array.from(document.querySelectorAll('li.msg-s-message-list__event, li.msg-s-event-listitem, li.msg-s-message-listitem'));
@@ -685,9 +743,7 @@ impl MessagingService for ChromiumMessagingService {
             .await
             .map_err(|e| AppError::Cdp(e.to_string()))?;
 
-        let mut messages = eval_res
-            .into_value::<Vec<Message>>()
-            .unwrap_or_default();
+        let mut messages = eval_res.into_value::<Vec<Message>>().unwrap_or_default();
 
         if let Some(lim) = limit {
             if messages.len() > lim {
@@ -698,7 +754,11 @@ impl MessagingService for ChromiumMessagingService {
         Ok(messages)
     }
 
-    async fn list_inbox(&self, filter: &InboxFilter, raw: bool) -> Result<(InboxResult, Option<Value>), AppError> {
+    async fn list_inbox(
+        &self,
+        filter: &InboxFilter,
+        raw: bool,
+    ) -> Result<(InboxResult, Option<Value>), AppError> {
         info!(target: "messaging", "Listing inbox conversations...");
         human_jitter(&self.rule).await;
 
@@ -724,13 +784,18 @@ impl MessagingService for ChromiumMessagingService {
                 "query:(predicateUnions:List((conversationCategoryPredicate:(category:PRIMARY_INBOX)))),count:20,mailboxUrn:{encoded_mailbox},nextCursor:{encoded_cursor}"
             );
             let url = format!("{graphql_base}?queryId={query_id_paged}&variables=({vars})");
-            let (status, ok, body) = InPageTransport::fetch(&self.page, "GET", &url, &custom_headers, None, 20_000).await?;
+            let (status, ok, body) =
+                InPageTransport::fetch(&self.page, "GET", &url, &custom_headers, None, 20_000)
+                    .await?;
             if ok && status == 200 {
                 if let Ok(val) = serde_json::from_str::<Value>(&body) {
                     let root_paged = val
                         .get("data")
                         .and_then(|d| d.get("messengerConversationsByCategoryQuery"));
-                    if let Some(elements) = root_paged.and_then(|r| r.get("elements")).and_then(|e| e.as_array()) {
+                    if let Some(elements) = root_paged
+                        .and_then(|r| r.get("elements"))
+                        .and_then(|e| e.as_array())
+                    {
                         for elem in elements {
                             let conv = parse_conversation_element(elem, Some(&self_profile));
                             if matches_inbox_filter(&conv, filter) {
@@ -750,17 +815,27 @@ impl MessagingService for ChromiumMessagingService {
             }
         } else {
             // Case 2: Fetch initial page
-            let url = format!("{graphql_base}?queryId={query_id_first}&variables=(mailboxUrn:{encoded_mailbox})");
-            let (status, ok, body) = InPageTransport::fetch(&self.page, "GET", &url, &custom_headers, None, 20_000).await?;
+            let url = format!(
+                "{graphql_base}?queryId={query_id_first}&variables=(mailboxUrn:{encoded_mailbox})"
+            );
+            let (status, ok, body) =
+                InPageTransport::fetch(&self.page, "GET", &url, &custom_headers, None, 20_000)
+                    .await?;
 
             if ok && status == 200 {
                 if let Ok(val) = serde_json::from_str::<Value>(&body) {
                     let root = val
                         .get("data")
                         .and_then(|d| d.get("messengerConversationsBySyncToken"))
-                        .or_else(|| val.get("data").and_then(|d| d.get("messengerConversationsByCategoryQuery")));
+                        .or_else(|| {
+                            val.get("data")
+                                .and_then(|d| d.get("messengerConversationsByCategoryQuery"))
+                        });
 
-                    if let Some(elements) = root.and_then(|r| r.get("elements")).and_then(|e| e.as_array()) {
+                    if let Some(elements) = root
+                        .and_then(|r| r.get("elements"))
+                        .and_then(|e| e.as_array())
+                    {
                         for elem in elements {
                             let conv = parse_conversation_element(elem, Some(&self_profile));
                             if matches_inbox_filter(&conv, filter) {
@@ -812,7 +887,9 @@ impl MessagingService for ChromiumMessagingService {
                     .await
                     .map_err(|e| AppError::Cdp(e.to_string()))?;
 
-                let dom_convs = eval_res.into_value::<Vec<Conversation>>().unwrap_or_default();
+                let dom_convs = eval_res
+                    .into_value::<Vec<Conversation>>()
+                    .unwrap_or_default();
                 for conv in dom_convs {
                     if matches_inbox_filter(&conv, filter) {
                         conversations.push(conv);
@@ -837,7 +914,9 @@ impl MessagingService for ChromiumMessagingService {
                     "query:(predicateUnions:List((conversationCategoryPredicate:(category:PRIMARY_INBOX)))),count:20,mailboxUrn:{encoded_mailbox},nextCursor:{encoded_cursor}"
                 );
                 let url = format!("{graphql_base}?queryId={query_id_paged}&variables=({vars})");
-                let (status, ok, body) = InPageTransport::fetch(&self.page, "GET", &url, &custom_headers, None, 20_000).await?;
+                let (status, ok, body) =
+                    InPageTransport::fetch(&self.page, "GET", &url, &custom_headers, None, 20_000)
+                        .await?;
 
                 if ok && status == 200 {
                     if let Ok(val) = serde_json::from_str::<Value>(&body) {
@@ -845,7 +924,9 @@ impl MessagingService for ChromiumMessagingService {
                             .get("data")
                             .and_then(|d| d.get("messengerConversationsByCategoryQuery"));
 
-                        let elements_opt = root_paged.and_then(|r| r.get("elements")).and_then(|e| e.as_array());
+                        let elements_opt = root_paged
+                            .and_then(|r| r.get("elements"))
+                            .and_then(|e| e.as_array());
                         if let Some(elements) = elements_opt {
                             if elements.is_empty() {
                                 next_cursor = None;
@@ -895,31 +976,76 @@ impl MessagingService for ChromiumMessagingService {
 
 fn parse_conversation_element(elem: &Value, self_profile: Option<&SelfProfile>) -> Conversation {
     let raw_entity_urn = elem.get("entityUrn").and_then(|u| u.as_str()).unwrap_or("");
-    let entity_urn = extract_thread_id(raw_entity_urn).unwrap_or_else(|| raw_entity_urn.to_string());
+    let entity_urn =
+        extract_thread_id(raw_entity_urn).unwrap_or_else(|| raw_entity_urn.to_string());
     let read = elem.get("read").and_then(|r| r.as_bool());
-    let unread_count = elem.get("unreadCount").and_then(|u| u.as_u64()).map(|u| u as u32);
+    let unread_count = elem
+        .get("unreadCount")
+        .and_then(|u| u.as_u64())
+        .map(|u| u as u32);
     let last_activity_at = elem.get("lastActivityAt").and_then(|l| l.as_i64());
 
     let mut participants = Vec::new();
-    if let Some(parts) = elem.get("conversationParticipants").and_then(|p| p.as_array()) {
+    if let Some(parts) = elem
+        .get("conversationParticipants")
+        .and_then(|p| p.as_array())
+    {
         for p in parts {
             let member = p.get("participantType").and_then(|pt| pt.get("member"));
             let name = member.and_then(|m| {
-                let first = m.get("firstName").and_then(|f| f.get("text")).and_then(|t| t.as_str()).unwrap_or("");
-                let last = m.get("lastName").and_then(|l| l.get("text")).and_then(|t| t.as_str()).unwrap_or("");
+                let first = m
+                    .get("firstName")
+                    .and_then(|f| f.get("text"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                let last = m
+                    .get("lastName")
+                    .and_then(|l| l.get("text"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
                 let full = format!("{first} {last}").trim().to_string();
-                if full.is_empty() { None } else { Some(full) }
+                if full.is_empty() {
+                    None
+                } else {
+                    Some(full)
+                }
             });
-            let urn = p.get("hostIdentityUrn").and_then(|u| u.as_str()).map(|s| s.to_string());
-            let headline = member.and_then(|m| m.get("headline").and_then(|h| h.get("text")).and_then(|t| t.as_str())).map(|s| s.to_string());
-            let profile_url = member.and_then(|m| m.get("profileUrl").and_then(|u| u.as_str())).map(|s| s.to_string());
+            let urn = p
+                .get("hostIdentityUrn")
+                .and_then(|u| u.as_str())
+                .map(|s| s.to_string());
+            let headline = member
+                .and_then(|m| {
+                    m.get("headline")
+                        .and_then(|h| h.get("text"))
+                        .and_then(|t| t.as_str())
+                })
+                .map(|s| s.to_string());
+            let profile_url = member
+                .and_then(|m| m.get("profileUrl").and_then(|u| u.as_str()))
+                .map(|s| s.to_string());
 
             let is_self = if let Some(sp) = self_profile {
-                let match_urn = sp.urn.as_ref().map(|u| Some(u) == urn.as_ref()).unwrap_or(false);
-                let match_name = sp.full_name.as_ref().map(|n| Some(n) == name.as_ref()).unwrap_or(false);
-                let match_pub_id = sp.public_identifier.as_ref().map(|pub_id| {
-                    profile_url.as_ref().map(|u| u.contains(pub_id)).unwrap_or(false)
-                }).unwrap_or(false);
+                let match_urn = sp
+                    .urn
+                    .as_ref()
+                    .map(|u| Some(u) == urn.as_ref())
+                    .unwrap_or(false);
+                let match_name = sp
+                    .full_name
+                    .as_ref()
+                    .map(|n| Some(n) == name.as_ref())
+                    .unwrap_or(false);
+                let match_pub_id = sp
+                    .public_identifier
+                    .as_ref()
+                    .map(|pub_id| {
+                        profile_url
+                            .as_ref()
+                            .map(|u| u.contains(pub_id))
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false);
                 match_urn || match_name || match_pub_id
             } else {
                 false
@@ -936,13 +1062,28 @@ fn parse_conversation_element(elem: &Value, self_profile: Option<&SelfProfile>) 
     }
 
     let mut latest_message = None;
-    if let Some(msgs) = elem.get("messages").and_then(|m| m.get("elements")).and_then(|e| e.as_array()) {
+    if let Some(msgs) = elem
+        .get("messages")
+        .and_then(|m| m.get("elements"))
+        .and_then(|e| e.as_array())
+    {
         if let Some(first_msg) = msgs.first() {
-            let text = first_msg.get("body").and_then(|b| b.get("text")).and_then(|t| t.as_str()).map(|s| s.to_string());
+            let text = first_msg
+                .get("body")
+                .and_then(|b| b.get("text"))
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string());
             let delivered_at = first_msg.get("deliveredAt").and_then(|d| d.as_i64());
             latest_message = Some(Message {
-                entity_urn: first_msg.get("entityUrn").and_then(|u| u.as_str()).map(|s| s.to_string()),
-                sender_urn: first_msg.get("actor").and_then(|a| a.get("hostIdentityUrn")).and_then(|u| u.as_str()).map(|s| s.to_string()),
+                entity_urn: first_msg
+                    .get("entityUrn")
+                    .and_then(|u| u.as_str())
+                    .map(|s| s.to_string()),
+                sender_urn: first_msg
+                    .get("actor")
+                    .and_then(|a| a.get("hostIdentityUrn"))
+                    .and_then(|u| u.as_str())
+                    .map(|s| s.to_string()),
                 sender_name: None,
                 text,
                 attachments: Vec::new(),
@@ -973,8 +1114,16 @@ fn matches_inbox_filter(conv: &Conversation, filter: &InboxFilter) -> bool {
     if let Some(ref p_filter) = filter.participant {
         let needle = p_filter.to_lowercase();
         let matches = conv.participants.iter().any(|p| {
-            p.name.as_deref().unwrap_or("").to_lowercase().contains(&needle)
-                || p.urn.as_deref().unwrap_or("").to_lowercase().contains(&needle)
+            p.name
+                .as_deref()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains(&needle)
+                || p.urn
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&needle)
         });
         if !matches {
             return false;
@@ -982,17 +1131,30 @@ fn matches_inbox_filter(conv: &Conversation, filter: &InboxFilter) -> bool {
     }
     if let Some(ref s_filter) = filter.sender {
         let needle = s_filter.to_lowercase();
-        let matches = conv.latest_message.as_ref().map(|m| {
-            m.sender_name.as_deref().unwrap_or("").to_lowercase().contains(&needle)
-                || m.sender_urn.as_deref().unwrap_or("").to_lowercase().contains(&needle)
-        }).unwrap_or(false);
+        let matches = conv
+            .latest_message
+            .as_ref()
+            .map(|m| {
+                m.sender_name
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&needle)
+                    || m.sender_urn
+                        .as_deref()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(&needle)
+            })
+            .unwrap_or(false);
         if !matches {
             return false;
         }
     }
     if let Some(ref contains_filter) = filter.contains {
         let needle = contains_filter.to_lowercase();
-        let matches = conv.latest_message
+        let matches = conv
+            .latest_message
             .as_ref()
             .and_then(|m| m.text.as_ref())
             .map(|t| t.to_lowercase().contains(&needle))
@@ -1078,6 +1240,9 @@ mod tests {
             Some("2-YmI3YTUxOWMtNzEyOC00MmEzLTkyNjQtYzFkNjg0YTJiYTM3XzEwMA==".to_string())
         );
         assert_eq!(extract_thread_id("iryna-ievtushenko"), None);
-        assert_eq!(extract_thread_id("ACoAADaXNhIBZUmfxGCT49oQk7kN8m3tdRhiTBE"), None);
+        assert_eq!(
+            extract_thread_id("ACoAADaXNhIBZUmfxGCT49oQk7kN8m3tdRhiTBE"),
+            None
+        );
     }
 }
