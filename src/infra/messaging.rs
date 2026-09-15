@@ -536,11 +536,12 @@ impl MessagingService for ChromiumMessagingService {
                     await sleep(200);
                 }}
 
+                const maxRounds = Math.min(Math.max(Math.ceil(targetLimit / 15) + 5, 20), 150);
                 let container = findScrollContainer();
                 let prevCount = 0;
                 let staleRounds = 0;
 
-                for (let round = 0; round < 30; round++) {{
+                for (let round = 0; round < maxRounds; round++) {{
                     const currentEvents = Array.from(document.querySelectorAll('li.msg-s-message-list__event, li.msg-s-event-listitem, li.msg-s-message-listitem'))
                         .filter(el => {{
                             const body = el.querySelector('.msg-s-event-listitem__body, p, [class*="message-bubble"]');
@@ -563,7 +564,26 @@ impl MessagingService for ChromiumMessagingService {
 
                     container = findScrollContainer() || container;
                     if (container) {{
-                        // Support both reversed flex containers (negative scrollTop) and standard containers
+                        // 1. Move scroll slightly away from edge so re-scrolling triggers scroll event & observer intersection
+                        if (container.scrollTop < 0) {{
+                            container.scrollTop += 250;
+                        }} else {{
+                            container.scrollTop = Math.min(container.scrollTop + 250, container.scrollHeight);
+                        }}
+                        container.dispatchEvent(new Event('scroll', {{ bubbles: true }}));
+                        await sleep(100);
+
+                        // 2. Scroll top sentinel directly into view (triggers LinkedIn's IntersectionObserver)
+                        const topSentinel = document.querySelector('.msg-s-message-list__top-of-list') 
+                            || document.querySelector('.msg-s-message-list__loader')
+                            || (currentEvents.length > 0 ? currentEvents[0] : null);
+                        if (topSentinel) {{
+                            try {{
+                                topSentinel.scrollIntoView({{ block: 'center', behavior: 'instant' }});
+                            }} catch(_) {{}}
+                        }}
+
+                        // 3. Pin to extreme top
                         if (container.scrollTop < 0) {{
                             container.scrollTop = -container.scrollHeight;
                         }} else {{
@@ -571,8 +591,7 @@ impl MessagingService for ChromiumMessagingService {
                         }}
                         container.dispatchEvent(new Event('scroll', {{ bubbles: true }}));
                         container.dispatchEvent(new WheelEvent('wheel', {{ deltaY: -500, bubbles: true }}));
-                    }}
-                    if (currentEvents.length > 0) {{
+                    }} else if (currentEvents.length > 0) {{
                         try {{ currentEvents[0].scrollIntoView({{ block: 'start', behavior: 'instant' }}); }} catch(_) {{}}
                     }}
 
@@ -584,12 +603,8 @@ impl MessagingService for ChromiumMessagingService {
                         try {{ loadMoreBtn.click(); }} catch(_) {{}}
                     }}
 
-                    await sleep(1500);
+                    await sleep(1800);
                 }}
-
-
-
-
 
                 // 2. Select top-level list items only (to prevent duplicate matching with child elements)
                 let msgItems = Array.from(document.querySelectorAll('li.msg-s-message-list__event, li.msg-s-event-listitem, li.msg-s-message-listitem'));
@@ -639,6 +654,7 @@ impl MessagingService for ChromiumMessagingService {
                                     media_type: 'document',
                                     name: name,
                                     size: size,
+                                    url: null,
                                 }});
                             }}
                         }}
@@ -702,12 +718,34 @@ impl MessagingService for ChromiumMessagingService {
                     const groupEl = item.closest('.msg-s-message-group') || item;
                     const senderEl = groupEl.querySelector('.msg-s-message-group__name, .msg-s-message-group__profile-link, a[href*="/in/"]');
                     let sender = senderEl ? (senderEl.innerText || '').trim() : null;
+                    if (!sender) {{
+                        let prev = item.previousElementSibling;
+                        while (prev) {{
+                            const prevSender = prev.querySelector('.msg-s-message-group__name, .msg-s-message-group__profile-link, a[href*="/in/"]');
+                            if (prevSender) {{
+                                sender = (prevSender.innerText || '').trim();
+                                break;
+                            }}
+                            prev = prev.previousElementSibling;
+                        }}
+                    }}
                     if (sender) {{
                         sender = sender.replace(/^View\s+/i, '').replace(/['’]s\s+profile$/i, '').trim();
                     }}
 
                     const timeEl = item.querySelector('time') || groupEl.querySelector('time');
-                    const time = timeEl ? (timeEl.innerText || timeEl.getAttribute('datetime') || '').trim() : null;
+                    let time = timeEl ? (timeEl.innerText || timeEl.getAttribute('datetime') || '').trim() : null;
+                    if (!time) {{
+                        let prev = item.previousElementSibling;
+                        while (prev) {{
+                            const prevTime = prev.querySelector('time');
+                            if (prevTime) {{
+                                time = (prevTime.innerText || prevTime.getAttribute('datetime') || '').trim();
+                                break;
+                            }}
+                            prev = prev.previousElementSibling;
+                        }}
+                    }}
 
                     const urnEl = item.querySelector('[data-event-urn]') || item;
                     const urn = urnEl.getAttribute('data-event-urn') || item.getAttribute('id') || null;
