@@ -193,13 +193,46 @@ impl BrowserSession {
         }
     }
 
-    pub async fn new_page(&self, url: &str) -> Result<Page, AppError> {
+    pub async fn get_or_create_page(&self, target_url: &str) -> Result<Page, AppError> {
         let lock = self.browser.lock().await;
-        let b = lock.as_ref().ok_or_else(|| AppError::Browser("Browser session is closed".to_string()))?;
-        let page = b.new_page(url).await.map_err(|e| AppError::Browser(format!("Failed to open page: {e}")))?;
+        let b = lock
+            .as_ref()
+            .ok_or_else(|| AppError::Browser("Browser session is closed".to_string()))?;
+
+        // If attaching to an existing instance, allow up to 1.5s for CDP target discovery to populate pages
+        let max_attempts = if self.is_remote { 10 } else { 1 };
+        for attempt in 0..max_attempts {
+            if let Ok(pages) = b.pages().await {
+                for p in pages {
+                    let u = match p.evaluate("window.location.href").await {
+                        Ok(val) => val.into_value::<String>().unwrap_or_default(),
+                        Err(_) => String::new(),
+                    };
+                    if u.contains("linkedin.com") && !u.contains("protechts.net") && !u.contains("chrome-error") {
+                        info!(target: "browser", "Reusing existing LinkedIn tab at {u}");
+                        let _ = p.bring_to_front().await;
+                        crate::browser::stealth::apply_stealth(&p).await?;
+                        self.pace().await;
+                        return Ok(p);
+                    }
+                }
+            }
+            if attempt + 1 < max_attempts {
+                tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+            }
+        }
+
+        let page = b
+            .new_page(target_url)
+            .await
+            .map_err(|e| AppError::Browser(format!("Failed to open page: {e}")))?;
         crate::browser::stealth::apply_stealth(&page).await?;
         self.pace().await;
         Ok(page)
+    }
+
+    pub async fn new_page(&self, url: &str) -> Result<Page, AppError> {
+        self.get_or_create_page(url).await
     }
 
     pub async fn close(&self) -> Result<(), AppError> {

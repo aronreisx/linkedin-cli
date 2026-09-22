@@ -62,6 +62,7 @@ impl InPageTransport {
                     method: method,
                     headers: headers,
                     credentials: 'include',
+                    redirect: 'manual',
                     signal: controller.signal
                 }};
 

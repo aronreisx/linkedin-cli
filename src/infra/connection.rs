@@ -3,7 +3,6 @@ use chromiumoxide::Page;
 use serde_json::Value;
 use tracing::{debug, info, warn};
 
-use crate::browser::transport::InPageTransport;
 use crate::domain::models::{ConnectionState, InteractionRule, Invitation, StatusResult};
 use crate::domain::traits::{ConnectionManager, InvitationManager};
 use crate::errors::AppError;
@@ -28,34 +27,7 @@ impl ConnectionManager for ChromiumConnectionManager {
         info!(target: "connection", "Checking connection status for {public_id}");
         human_jitter(&self.rule).await;
 
-        // 1. Try TopCard supplementary API
-        let decoration = "com.linkedin.voyager.dash.deco.identity.profile.TopCardSupplementary-120";
-        let voyager_url = format!(
-            "https://www.linkedin.com/voyager/api/identity/dash/profiles?decorationId={decoration}&memberIdentity={public_id}&q=memberIdentity"
-        );
-
-        let (status, ok, body) = InPageTransport::fetch(&self.page, "GET", &voyager_url, &[], None, 15_000).await?;
-
-        if ok && status == 200 {
-            if let Ok(json_val) = serde_json::from_str::<Value>(&body) {
-                if let Some(included) = json_val.get("included").and_then(|i| i.as_array()) {
-                    for item in included {
-                        if item.get("$type").and_then(|t| t.as_str()).map(|s| s.contains("MemberRelationship")).unwrap_or(false) {
-                            if let Some(dist) = item.get("distance").and_then(|d| d.as_str()) {
-                                if dist == "DISTANCE_1" {
-                                    return Ok(StatusResult {
-                                        public_identifier: public_id,
-                                        state: ConnectionState::Connected,
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. UI Inspection fallback
+        // UI Inspection
         let profile_url = format!("https://www.linkedin.com/in/{public_id}/");
         self.page
             .goto(&profile_url)

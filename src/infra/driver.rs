@@ -21,6 +21,13 @@ impl ChromiumLinkedInDriver {
     }
 
     pub async fn page_url(&self) -> Result<String, AppError> {
+        if let Ok(val) = self.page.evaluate("window.location.href").await {
+            if let Ok(u) = val.into_value::<String>() {
+                if !u.is_empty() {
+                    return Ok(u);
+                }
+            }
+        }
         self.page
             .url()
             .await
@@ -41,8 +48,23 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
 
         debug!(target: "driver", "Checking auth status at initial URL: {current_url} (state: {:?})", state);
 
-        // If not already on feed or profile, navigate to feed to verify active session
-        if state != PageState::Feed && state != PageState::Profile && state != PageState::Checkpoint {
+        // Check if navigation element is already present on the active page
+        let initial_has_nav = match self
+            .page
+            .evaluate("Boolean(document.querySelector('.global-nav') || document.querySelector('#global-nav'))")
+            .await
+        {
+            Ok(val) => val.into_value::<bool>().unwrap_or(false),
+            Err(_) => false,
+        };
+
+        // If not already on feed, profile, checkpoint, and nav is missing, only navigate if not already on LinkedIn
+        if !initial_has_nav
+            && state != PageState::Feed
+            && state != PageState::Profile
+            && state != PageState::Checkpoint
+            && !current_url.contains("linkedin.com")
+        {
             info!(target: "driver", "Navigating to LinkedIn feed to verify active session...");
             self.navigate_to("https://www.linkedin.com/feed/").await?;
         }
@@ -372,16 +394,83 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
     }
 
     async fn whoami(&self) -> Result<SelfProfile, AppError> {
+        // 1. Primary: Resilient DOM extraction (fast, zero network overhead, avoids deprecated Voyager endpoints)
+        let dom_js = r#"
+            (() => {
+                let public_id = null;
+                let full_name = null;
+
+                // 1. Look for 'View profile' or 'Ver perfil' anchor (present in Me dropdown across all pages)
+                const vp = Array.from(document.querySelectorAll('a[href*="/in/"]')).find(a => {
+                    const t = (a.innerText || '').trim().toLowerCase();
+                    return t === 'view profile' || t === 'ver perfil';
+                });
+                if (vp) {
+                    const m = vp.href.match(/\/in\/([a-zA-Z0-9_-]+)/);
+                    if (m) {
+                        public_id = m[1];
+                        const anchors = Array.from(document.querySelectorAll('a[href*="' + public_id + '"]'));
+                        for (const a of anchors) {
+                            const t = (a.innerText || '').trim();
+                            if (t && !t.toLowerCase().includes('view profile') && !t.toLowerCase().includes('ver perfil') && !t.toLowerCase().includes('activity') && !t.toLowerCase().includes('post')) {
+                                full_name = t.split('\n')[0].trim();
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // 2. Feed identity module (when on feed page)
+                if (!public_id) {
+                    const feedLink = document.querySelector('.feed-identity-module a[href*="/in/"]');
+                    if (feedLink) {
+                        const m = feedLink.href.match(/\/in\/([a-zA-Z0-9_-]+)/);
+                        if (m) {
+                            public_id = m[1];
+                            const nameEl = document.querySelector('.feed-identity-module__actor-meta, .identity-headline, h2.t-16');
+                            if (nameEl) {
+                                full_name = nameEl.innerText.split('\n')[0].trim();
+                            } else {
+                                full_name = feedLink.innerText.split('\n')[0].trim();
+                            }
+                        }
+                    }
+                }
+
+                return {
+                    public_identifier: public_id,
+                    full_name: full_name,
+                    urn: public_id ? `urn:li:fsd_profile:${public_id}` : null
+                };
+            })()
+        "#;
+
+        if let Ok(eval_val) = self.page.evaluate(dom_js).await {
+            if let Ok(val) = eval_val.into_value::<Value>() {
+                if let Some(pid) = val.get("public_identifier").and_then(|p| p.as_str()) {
+                    let fn_opt = val.get("full_name").and_then(|f| f.as_str()).map(|s| s.to_string());
+                    let urn_opt = val.get("urn").and_then(|u| u.as_str()).map(|s| s.to_string());
+                    info!(target: "driver", "Extracted authenticated identity from DOM: pid={pid}, name={:?}", fn_opt);
+                    return Ok(SelfProfile {
+                        public_identifier: Some(pid.to_string()),
+                        urn: urn_opt,
+                        full_name: fn_opt,
+                    });
+                }
+            }
+        }
+
         let voyager_url = "https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=me";
 
         let mut last_err = None;
-        for attempt in 1..=5 {
-            match InPageTransport::fetch(&self.page, "GET", voyager_url, &[], None, 15_000).await {
+        for attempt in 1..=2 {
+            match InPageTransport::fetch(&self.page, "GET", voyager_url, &[], None, 10_000).await {
                 Ok((status, ok, body)) => {
                     if !ok || status == 401 || status == 403 {
-                        return Err(AppError::Authentication(format!(
+                        last_err = Some(AppError::Authentication(format!(
                             "Failed to fetch own profile via Voyager API (HTTP {status})"
                         )));
+                        break;
                     }
 
                     let json_val: Value = serde_json::from_str(&body).map_err(AppError::Json)?;
@@ -427,6 +516,61 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
                 Err(e) => {
                     last_err = Some(e);
                     tokio::time::sleep(tokio::time::Duration::from_millis(attempt * 400)).await;
+                }
+            }
+        }
+
+        // Resilient fallback to DOM extraction when Voyager API is intercepted, deprecated, or blocked
+        let dom_js = r#"
+            (() => {
+                let public_id = null;
+                let full_name = null;
+
+                const links = Array.from(document.querySelectorAll('a[href*="/in/"]'));
+                for (const a of links) {
+                    const m = a.href.match(/\/in\/([a-zA-Z0-9_-]+)/);
+                    if (m && !["feed", "messaging", "mynetwork", "jobs", "notifications"].includes(m[1])) {
+                        public_id = m[1];
+                        const text = (a.innerText || "").trim();
+                        if (text.length > 0) {
+                            const firstLine = text.split("\n")[0].trim();
+                            if (firstLine.length > 0 && !firstLine.toLowerCase().includes("view profile")) {
+                                full_name = firstLine;
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                if (!full_name) {
+                    const meImg = document.querySelector('.global-nav__me-photo, img[alt*="photo"], .feed-identity-module img');
+                    if (meImg && meImg.getAttribute('alt')) {
+                        const alt = meImg.getAttribute('alt');
+                        if (alt && !alt.toLowerCase().includes("photo")) {
+                            full_name = alt;
+                        }
+                    }
+                }
+
+                return {
+                    public_identifier: public_id,
+                    full_name: full_name,
+                    urn: public_id ? `urn:li:fsd_profile:${public_id}` : null
+                };
+            })()
+        "#;
+
+        if let Ok(eval_val) = self.page.evaluate(dom_js).await {
+            if let Ok(val) = eval_val.into_value::<Value>() {
+                if let Some(pid) = val.get("public_identifier").and_then(|p| p.as_str()) {
+                    let fn_opt = val.get("full_name").and_then(|f| f.as_str()).map(|s| s.to_string());
+                    let urn_opt = val.get("urn").and_then(|u| u.as_str()).map(|s| s.to_string());
+                    info!(target: "driver", "Extracted authenticated identity from DOM fallback: pid={pid}, name={:?}", fn_opt);
+                    return Ok(SelfProfile {
+                        public_identifier: Some(pid.to_string()),
+                        urn: urn_opt,
+                        full_name: fn_opt,
+                    });
                 }
             }
         }

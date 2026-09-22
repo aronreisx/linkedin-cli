@@ -49,7 +49,7 @@ struct Cli {
     user_data_dir: Option<PathBuf>,
 
     /// Connect to an existing CDP remote debugging endpoint (e.g. ws://... or http://127.0.0.1:9222)
-    #[arg(long, global = true)]
+    #[arg(long, global = true, env = "LINKEDIN_CDP_URL")]
     cdp_url: Option<String>,
 
     /// Slow down CDP operations by the specified amount of milliseconds (pacing)
@@ -725,7 +725,7 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                     let pid = std::process::id();
                     let _entry = linkedin::browser::write_session(name, &ws_url, pid)?;
 
-                    let _page = session.new_page("https://www.linkedin.com/feed/").await?;
+                    let _page = session.get_or_create_page("https://www.linkedin.com/feed/").await?;
                     println!("{ws_url}");
                     eprintln!("Session '{name}' bound at {ws_url} (PID: {pid}). Press Ctrl+C to terminate.");
 
@@ -1201,13 +1201,14 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
     };
 
     let session = BrowserSession::launch(&browser_config).await?;
-    let page = session.new_page("https://www.linkedin.com").await?;
+    let page = session.get_or_create_page("https://www.linkedin.com/feed/").await?;
 
     let store = linkedin::infra::resolve_credential_store();
     let stored_creds = store.get_credentials(&cli.session).ok().flatten();
 
-    // Inject session cookies from credential store if available
-    if let Some(creds) = &stored_creds {
+    // Inject session cookies from credential store if available (only for local managed browsers)
+    if !session.is_remote() {
+        if let Some(creds) = &stored_creds {
         use chromiumoxide::cdp::browser_protocol::network::CookieParam;
         let mut cookies_to_inject = Vec::new();
         if let Some(li_at) = &creds.li_at {
@@ -1244,6 +1245,7 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
         if !cookies_to_inject.is_empty() {
             let _ = page.set_cookies(cookies_to_inject).await;
         }
+        }
     }
 
     let rule = InteractionRule::default();
@@ -1259,7 +1261,7 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
     );
 
     if requires_session {
-        ensure_authenticated_session(&page, &rule, store.as_ref(), &cli.session, &stored_creds).await?;
+        ensure_authenticated_session(&page, &rule, store.as_ref(), &cli.session, &stored_creds, session.is_remote()).await?;
     }
 
     // 4. Command dispatch to domain traits with infra implementations
@@ -1735,6 +1737,7 @@ async fn ensure_authenticated_session(
     store: &dyn linkedin::domain::CredentialStore,
     session_name: &str,
     stored_creds: &Option<linkedin::domain::ProfileCredentials>,
+    is_remote: bool,
 ) -> Result<(), linkedin::errors::AppError> {
     use linkedin::domain::AuthStatus;
     use linkedin::domain::traits::LinkedInDriver;
@@ -1751,6 +1754,7 @@ async fn ensure_authenticated_session(
                 "Authenticated session active: {}",
                 account_name.as_deref().unwrap_or("Connected")
             );
+            persist_session_cookies(page, store, session_name, stored_creds).await;
             Ok(())
         }
         AuthStatus::ChallengeCheckpoint { url } => {
@@ -1782,6 +1786,11 @@ async fn ensure_authenticated_session(
             Ok(())
         }
         AuthStatus::Unauthenticated => {
+            if is_remote {
+                return Err(AppError::Authentication(
+                    "Remote Chrome session has no active LinkedIn login. Please log in to LinkedIn in your Chrome browser window.".to_string()
+                ));
+            }
             tracing::info!(
                 target: "auth",
                 "Chromium has no active session. Signing in with stored credentials..."
