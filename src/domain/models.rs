@@ -39,6 +39,7 @@ pub struct Profile {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub headline: Option<String>,
+    pub summary: Option<String>,
     pub location: Option<String>,
     pub profile_url: String,
     pub connection_degree: Option<u8>,

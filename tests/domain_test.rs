@@ -15,6 +15,7 @@ fn test_profile_serialization() -> Result<(), Box<dyn std::error::Error>> {
         first_name: Some("Alice".to_string()),
         last_name: Some("Smith".to_string()),
         headline: Some("Staff Engineer".to_string()),
+        summary: Some("Staff engineer with 10+ years of experience".to_string()),
         location: Some("San Francisco, CA".to_string()),
         profile_url: "https://www.linkedin.com/in/alice-smith".to_string(),
         connection_degree: Some(1),

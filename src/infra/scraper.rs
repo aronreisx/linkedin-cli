@@ -86,10 +86,12 @@ impl ProfileScraper for ChromiumProfileScraper {
                 const name = document.querySelector('h1')?.innerText?.trim() || '';
                 const headline = document.querySelector('.text-body-medium')?.innerText?.trim() || null;
                 const location = document.querySelector('.text-body-small.inline.t-black--light.break-words')?.innerText?.trim() || null;
+                const summary = document.querySelector('#about ~ .display-flex .inline-show-more-text, section[data-section="about"] .inline-show-more-text')?.innerText?.trim() || null;
                 return {
                     name,
                     headline,
-                    location
+                    location,
+                    summary
                 };
             })()
         "#;
@@ -116,6 +118,7 @@ impl ProfileScraper for ChromiumProfileScraper {
         }
 
         let headline = val["headline"].as_str().map(|s| s.to_string());
+        let summary = val["summary"].as_str().map(|s| s.to_string());
         let location = val["location"].as_str().map(|s| s.to_string());
 
         let profile = Profile {
@@ -126,6 +129,7 @@ impl ProfileScraper for ChromiumProfileScraper {
             first_name: None,
             last_name: None,
             headline,
+            summary,
             location,
             profile_url,
             connection_degree: None,
@@ -144,6 +148,7 @@ fn parse_voyager_profile(json_val: &Value, public_id: &str, profile_url: &str) -
     let mut first_name = None;
     let mut last_name = None;
     let mut headline = None;
+    let mut summary = None;
     let mut location = None;
     let mut target_geo_urn = None;
     let mut connection_degree = None;
@@ -206,6 +211,7 @@ fn parse_voyager_profile(json_val: &Value, public_id: &str, profile_url: &str) -
                     .to_string();
 
                     headline = item.get("headline").and_then(|h| h.as_str()).map(|s| s.to_string());
+                    summary = item.get("summary").and_then(|s| s.as_str()).map(|s| s.to_string());
                     location = item.get("locationName").and_then(|l| l.as_str()).map(|s| s.to_string());
                     target_geo_urn = item
                         .get("geoLocation")
@@ -278,6 +284,7 @@ fn parse_voyager_profile(json_val: &Value, public_id: &str, profile_url: &str) -
         first_name,
         last_name,
         headline,
+        summary,
         location,
         profile_url: profile_url.to_string(),
         connection_degree,
