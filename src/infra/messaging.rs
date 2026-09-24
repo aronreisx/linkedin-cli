@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chromiumoxide::cdp::browser_protocol::input::InsertTextParams;
 use chromiumoxide::Page;
 use serde_json::Value;
 use tracing::{info, warn};
@@ -222,6 +223,20 @@ impl ChromiumMessagingService {
                 const composeBox = document.querySelector('div[role="textbox"][aria-label*="message"i]')
                     || document.querySelector('div.msg-form__contenteditable');
 
+                // Safety verification: check text in compose box before clicking Send!
+                if (msgText && composeBox) {{
+                    const boxText = (composeBox.innerText || composeBox.textContent || '').trim();
+                    const expectedTrimmed = msgText.trim();
+                    const minLen = expectedTrimmed.length >= 10 ? Math.min(Math.floor(expectedTrimmed.length * 0.7), 10) : 1;
+                    if (boxText.length < minLen) {{
+                        return {{
+                            sent: false,
+                            reason: `Safety check failed: compose box text length (${{boxText.length}}) is below required minimum (${{minLen}}) for message of ${{expectedTrimmed.length}} characters: "${{boxText}}"`,
+                            box_text: boxText
+                        }};
+                    }}
+                }}
+
                 const findSendButton = () => {{
                     if (composeBox) {{
                         const form = composeBox.closest('form, .msg-form, .msg-convo-wrapper, aside');
@@ -264,7 +279,11 @@ impl ChromiumMessagingService {
                 for (let i = 0; i < 50; i++) {{
                     await sleep(200);
                     const listItems = Array.from(document.querySelectorAll('.msg-s-message-list__event, .msg-s-event-listitem, .msg-s-message-group, .msg-s-event-listitem__body'));
-                    const hasMsg = msgText ? listItems.some(item => (item.innerText || '').includes(msgText)) : false;
+                    const checkPrefix = msgText ? msgText.substring(0, Math.min(30, msgText.length)) : null;
+                    const hasMsg = msgText ? listItems.some(item => {{
+                        const t = item.innerText || '';
+                        return t.includes(msgText) || (checkPrefix && t.includes(checkPrefix));
+                    }}) : false;
                     const boxCleared = composeBox && !(composeBox.innerText || '').trim();
                     const previewGone = !document.querySelector('.msg-form__attachment-preview, div[class*="attachment-preview"]');
                     if (hasMsg || (boxCleared && previewGone)) {{
@@ -307,6 +326,174 @@ impl ChromiumMessagingService {
 
         Ok(true)
     }
+
+    async fn insert_compose_text(&self, text: &str) -> Result<(), AppError> {
+        let text_json = serde_json::to_string(text).map_err(AppError::Json)?;
+
+        // 1. Focus the compose box and clear any previous draft/lingering text
+        let js_focus_and_clear = r#"
+            (async () => {
+                const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+                const findBox = () => {
+                    const selectors = [
+                        'div[role="textbox"][aria-label*="message"i]',
+                        'div.msg-form__contenteditable[role="textbox"]',
+                        '.msg-form__message-texteditor div[role="textbox"]',
+                        'div.msg-form__contenteditable',
+                        'div[contenteditable="true"]'
+                    ];
+                    for (const s of selectors) {
+                        const el = document.querySelector(s);
+                        if (el) return el;
+                    }
+                    return null;
+                };
+
+                let box = null;
+                for (let i = 0; i < 30; i++) {
+                    box = findBox();
+                    if (box) break;
+                    await sleep(200);
+                }
+
+                if (!box) {
+                    return { success: false, reason: "Compose box not found" };
+                }
+
+                box.focus();
+
+                // Select any existing contents so replacement is clean
+                const selection = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(box);
+                selection.removeAllRanges();
+                selection.addRange(range);
+                document.execCommand('delete');
+
+                return {
+                    success: true,
+                    current_length: (box.innerText || box.textContent || '').trim().length
+                };
+            })()
+        "#;
+
+        let res = self
+            .page
+            .evaluate(js_focus_and_clear)
+            .await
+            .map_err(|e| AppError::Cdp(e.to_string()))?;
+
+        let val = res.into_value::<Value>().unwrap_or_default();
+        let success = val.get("success").and_then(|s| s.as_bool()).unwrap_or(false);
+
+        if !success {
+            let reason = val
+                .get("reason")
+                .and_then(|r| r.as_str())
+                .unwrap_or("Failed to locate compose textbox");
+            return Err(AppError::ElementNotFound {
+                selector: format!("Message compose textbox: {reason}"),
+            });
+        }
+
+        // If any text remains after execCommand delete, send Backspace via CDP
+        let rem_len = val
+            .get("current_length")
+            .and_then(|l| l.as_u64())
+            .unwrap_or(0);
+        if rem_len > 0 {
+            let _ = crate::infra::typing::press_key(&self.page, "Backspace").await;
+        }
+
+        // 2. Insert text atomically via CDP InsertTextParams
+        self.page
+            .execute(InsertTextParams::new(text))
+            .await
+            .map_err(|e| AppError::Cdp(e.to_string()))?;
+
+        // Small pause for Draft.js / React to process input events
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+
+        // 3. Verify text was populated and fallback to execCommand if needed
+        let js_verify_and_fallback = format!(
+            r#"
+            (async ([expectedText]) => {{
+                const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+                const findBox = () => {{
+                    const selectors = [
+                        'div[role="textbox"][aria-label*="message"i]',
+                        'div.msg-form__contenteditable[role="textbox"]',
+                        '.msg-form__message-texteditor div[role="textbox"]',
+                        'div.msg-form__contenteditable',
+                        'div[contenteditable="true"]'
+                    ];
+                    for (const s of selectors) {{
+                        const el = document.querySelector(s);
+                        if (el) return el;
+                    }}
+                    return null;
+                }};
+
+                let box = findBox();
+                if (!box) return {{ verified: false, reason: "Box not found during verification" }};
+
+                let currentText = (box.innerText || box.textContent || '').trim();
+                const expectedTrimmed = expectedText.trim();
+                const minLen = expectedTrimmed.length >= 10 ? Math.min(Math.floor(expectedTrimmed.length * 0.7), 10) : 1;
+
+                // Fallback: If CDP InsertTextParams didn't populate (e.g. background tab focus glitch),
+                // focus again and attempt execCommand insertText
+                if (currentText.length < minLen) {{
+                    box.focus();
+                    const selection = window.getSelection();
+                    const range = document.createRange();
+                    range.selectNodeContents(box);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    document.execCommand('insertText', false, expectedText);
+                    await sleep(300);
+                    currentText = (box.innerText || box.textContent || '').trim();
+                }}
+
+                if (currentText.length < minLen) {{
+                    return {{
+                        verified: false,
+                        reason: `Text insertion failed: box has ${{currentText.length}} chars ("${{currentText.substring(0, 20)}}"), expected ${{expectedTrimmed.length}} chars`
+                    }};
+                }}
+
+                return {{ verified: true, length: currentText.length }};
+            }})({text_json})
+        "#
+        );
+
+        let v_res = self
+            .page
+            .evaluate(js_verify_and_fallback)
+            .await
+            .map_err(|e| AppError::Cdp(e.to_string()))?;
+
+        let v_val = v_res.into_value::<Value>().unwrap_or_default();
+        let verified = v_val.get("verified").and_then(|v| v.as_bool()).unwrap_or(false);
+
+        if !verified {
+            let reason = v_val
+                .get("reason")
+                .and_then(|r| r.as_str())
+                .unwrap_or("Failed to populate and verify compose textbox text");
+            return Err(AppError::ElementNotFound {
+                selector: format!("Message compose textbox: {reason}"),
+            });
+        }
+
+        // Realistic review delay before clicking send
+        human_typing_delay().await;
+        human_jitter(&self.rule).await;
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -314,10 +501,7 @@ impl MessagingService for ChromiumMessagingService {
     async fn send_direct_message(&self, handle_or_url: &str, text: &str) -> Result<bool, AppError> {
         let public_id = self.open_compose_box(handle_or_url).await?;
 
-        // Human-paced typing emulation through physical key events and cognitive delays
-        crate::infra::typing::human_type(&self.page, text, None).await?;
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        self.insert_compose_text(text).await?;
 
         self.click_send_and_verify(&public_id, Some(text)).await
     }
@@ -472,21 +656,7 @@ impl MessagingService for ChromiumMessagingService {
         // Insert optional text
         if let Some(msg_text) = text {
             if !msg_text.is_empty() {
-                // Focus compose box again just in case
-                let js_refocus = r#"
-                    (() => {
-                        const composeBox = document.querySelector('div[role="textbox"][aria-label*="message"i]')
-                            || document.querySelector('div.msg-form__contenteditable');
-                        if (composeBox) {
-                            try { composeBox.focus(); } catch(_) {}
-                        }
-                    })()
-                "#;
-                let _ = self.page.evaluate(js_refocus).await;
-
-                // Human-paced typing emulation through physical key events and cognitive delays
-                crate::infra::typing::human_type(&self.page, msg_text, None).await?;
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                self.insert_compose_text(msg_text).await?;
             }
         }
 

@@ -210,7 +210,6 @@ impl BrowserSession {
                     };
                     if u.contains("linkedin.com") && !u.contains("protechts.net") && !u.contains("chrome-error") {
                         info!(target: "browser", "Reusing existing LinkedIn tab at {u}");
-                        let _ = p.bring_to_front().await;
                         crate::browser::stealth::apply_stealth(&p).await?;
                         self.pace().await;
                         return Ok(p);
