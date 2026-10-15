@@ -345,6 +345,9 @@ enum SearchCommands {
         /// Filter to people actively hiring for a job title
         #[arg(long)]
         hiring_for: Vec<String>,
+        /// Filter to profiles actively hiring
+        #[arg(long)]
+        actively_hiring: bool,
         /// Result page (default: 1)
         #[arg(long, default_value = "1")]
         page: u32,
@@ -1201,7 +1204,21 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
     };
 
     let session = BrowserSession::launch(&browser_config).await?;
-    let page = session.get_or_create_page("https://www.linkedin.com/feed/").await?;
+    let target_url = match &cli.command {
+        Commands::Message(..) | Commands::Inbox(..) | Commands::Thread { .. } => "https://www.linkedin.com/messaging/",
+        Commands::Search(..) => "https://www.linkedin.com/search/",
+        Commands::Connection(ConnectionArgs { command: ConnectionCommands::Request { handle, .. } })
+        | Commands::Connect { handle, .. } => {
+            // Target specific profile directly to avoid intermediate navigation
+            &format!("https://www.linkedin.com/in/{handle}/")
+        }
+        Commands::Profile(ProfileArgs { command: ProfileCommands::Get { handle, .. } | ProfileCommands::Contact { handle, .. } | ProfileCommands::Status { handle } })
+        | Commands::ContactInfo { handle, .. } => {
+            &format!("https://www.linkedin.com/in/{handle}/")
+        }
+        _ => "https://www.linkedin.com/feed/",
+    };
+    let page = session.get_or_create_page(target_url).await?;
 
     let store = linkedin::infra::resolve_credential_store();
     let stored_creds = store.get_credentials(&cli.session).ok().flatten();
@@ -1402,8 +1419,13 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
         }
         Commands::Connection(ConnectionArgs { command: ConnectionCommands::Request { handle, note } })
         | Commands::Connect { handle, note } => {
-            let conn_mgr = ChromiumConnectionManager::new(page, rule);
-            let status = conn_mgr.send_connection_request(&handle, note.as_deref()).await?;
+            let conn_mgr = ChromiumConnectionManager::new(page.clone(), rule);
+            let status_res = conn_mgr.send_connection_request(&handle, note.as_deref()).await;
+            
+            // Clean up profile page tab to avoid accumulating tabs across repeated connection dispatches
+            let _ = session.close_page(&page).await;
+
+            let status = status_res?;
             let summary = match status.state {
                 ConnectionState::Pending => format!("Connection request sent to {handle}"),
                 ConnectionState::Connected => format!("{handle} is already a 1st degree connection"),
@@ -1597,9 +1619,9 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 render_data(&inbox_res.conversations, format, &summary)?;
             }
         }
-        Commands::Search(SearchArgs { command: SearchCommands::People { keywords, network, location, hiring_for, page: p } }) => {
+        Commands::Search(SearchArgs { command: SearchCommands::People { keywords, network, location, hiring_for, actively_hiring, page: p } }) => {
             let search_svc = ChromiumPeopleSearchService::new(page, rule);
-            let results = search_svc.search_people(&keywords, &network, &location, &hiring_for, p).await?;
+            let results = search_svc.search_people(&keywords, &network, &location, &hiring_for, actively_hiring, p).await?;
             if format == OutputFormat::Ndjson {
                 linkedin::render::stream_ndjson_items(&results.profiles)?;
             } else {

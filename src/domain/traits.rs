@@ -62,6 +62,7 @@ pub trait PeopleSearchService: Send + Sync {
         networks: &[String],
         locations: &[String],
         hiring_for: &[String],
+        actively_hiring: bool,
         page: u32,
     ) -> Result<PeopleSearchResult, AppError>;
 }

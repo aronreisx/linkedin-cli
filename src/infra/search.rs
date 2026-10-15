@@ -89,35 +89,13 @@ impl PeopleSearchService for ChromiumPeopleSearchService {
         networks: &[String],
         locations: &[String],
         _hiring_for: &[String],
+        actively_hiring: bool,
         page: u32,
     ) -> Result<PeopleSearchResult, AppError> {
-        info!(target: "search", "Searching people for: {keywords} (page {page})");
+        info!(target: "search", "Searching people for: {keywords} (page {page}, actively_hiring={actively_hiring})");
         human_jitter(&self.rule).await;
 
-        let mut query_params = Vec::new();
-        query_params.push(format!("keywords={}", urlencoding_simple(keywords)));
-        query_params.push(format!("page={page}"));
-
-        if !networks.is_empty() {
-            let codes: Vec<String> = networks
-                .iter()
-                .map(|n| format!("\"{}\"", Self::resolve_network_code(n)))
-                .collect();
-            query_params.push(format!("network=[{}]", codes.join(",")));
-        }
-
-        if !locations.is_empty() {
-            let geos: Vec<String> = locations
-                .iter()
-                .map(|l| format!("\"{}\"", Self::resolve_geo_urn(l)))
-                .collect();
-            query_params.push(format!("geoUrn=[{}]", geos.join(",")));
-        }
-
-        let search_url = format!(
-            "https://www.linkedin.com/search/results/people/?{}",
-            query_params.join("&")
-        );
+        let search_url = build_people_search_url(keywords, networks, locations, actively_hiring, page);
 
         self.page
             .goto(&search_url)
@@ -241,6 +219,43 @@ impl PeopleSearchService for ChromiumPeopleSearchService {
     }
 }
 
+pub fn build_people_search_url(
+    keywords: &str,
+    networks: &[String],
+    locations: &[String],
+    actively_hiring: bool,
+    page: u32,
+) -> String {
+    let mut query_params = Vec::new();
+    query_params.push(format!("keywords={}", urlencoding_simple(keywords)));
+    query_params.push(format!("page={page}"));
+
+    if !networks.is_empty() {
+        let codes: Vec<String> = networks
+            .iter()
+            .map(|n| format!("\"{}\"", ChromiumPeopleSearchService::resolve_network_code(n)))
+            .collect();
+        query_params.push(format!("network=[{}]", codes.join(",")));
+    }
+
+    if !locations.is_empty() {
+        let geos: Vec<String> = locations
+            .iter()
+            .map(|l| format!("\"{}\"", ChromiumPeopleSearchService::resolve_geo_urn(l)))
+            .collect();
+        query_params.push(format!("geoUrn=[{}]", geos.join(",")));
+    }
+
+    if actively_hiring {
+        query_params.push("activelyHiring=\"true\"".to_string());
+    }
+
+    format!(
+        "https://www.linkedin.com/search/results/people/?{}",
+        query_params.join("&")
+    )
+}
+
 fn urlencoding_simple(s: &str) -> String {
     let mut encoded = String::with_capacity(s.len() * 3);
     for b in s.bytes() {
@@ -257,4 +272,42 @@ fn urlencoding_simple(s: &str) -> String {
         }
     }
     encoded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_people_search_url_basic() {
+        let url = build_people_search_url("Software Engineer", &[], &[], false, 1);
+        assert_eq!(
+            url,
+            "https://www.linkedin.com/search/results/people/?keywords=Software+Engineer&page=1"
+        );
+        assert!(!url.contains("activelyHiring"));
+    }
+
+    #[test]
+    fn test_build_people_search_url_with_actively_hiring() {
+        let networks = vec!["second".to_string()];
+        let locations = vec!["NL".to_string(), "UK".to_string()];
+        let url = build_people_search_url("CTO", &networks, &locations, true, 2);
+
+        assert!(url.contains("keywords=CTO"));
+        assert!(url.contains("page=2"));
+        assert!(url.contains("network=[\"S\"]"));
+        assert!(url.contains("geoUrn=[\"102890719\",\"101165590\"]"));
+        assert!(url.contains("activelyHiring=\"true\""));
+    }
+
+    #[test]
+    fn test_build_people_search_url_without_actively_hiring() {
+        let networks = vec!["second".to_string()];
+        let locations = vec!["US".to_string()];
+        let url = build_people_search_url("Head of AI", &networks, &locations, false, 1);
+
+        assert!(url.contains("keywords=Head+of+AI"));
+        assert!(!url.contains("activelyHiring"));
+    }
 }

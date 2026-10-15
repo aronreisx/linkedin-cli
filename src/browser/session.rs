@@ -199,20 +199,73 @@ impl BrowserSession {
             .as_ref()
             .ok_or_else(|| AppError::Browser("Browser session is closed".to_string()))?;
 
+        // Classify target URL into functional categories:
+        // - Messaging: linkedin.com/messaging
+        // - Search: linkedin.com/search
+        // - Profile: linkedin.com/in/
+        // - Generic: linkedin.com/feed or other
+        let is_messaging_target = target_url.contains("/messaging");
+        let is_search_target = target_url.contains("/search");
+        let is_profile_target = target_url.contains("/in/");
+
         // If attaching to an existing instance, allow up to 1.5s for CDP target discovery to populate pages
         let max_attempts = if self.is_remote { 10 } else { 1 };
         for attempt in 0..max_attempts {
             if let Ok(pages) = b.pages().await {
-                for p in pages {
+                // First pass: exact purpose match
+                for p in &pages {
                     let u = match p.evaluate("window.location.href").await {
                         Ok(val) => val.into_value::<String>().unwrap_or_default(),
                         Err(_) => String::new(),
                     };
-                    if u.contains("linkedin.com") && !u.contains("protechts.net") && !u.contains("chrome-error") {
-                        info!(target: "browser", "Reusing existing LinkedIn tab at {u}");
-                        crate::browser::stealth::apply_stealth(&p).await?;
+                    if !u.contains("linkedin.com") || u.contains("protechts.net") || u.contains("chrome-error") {
+                        continue;
+                    }
+
+                    let matches_purpose = if is_messaging_target {
+                        u.contains("/messaging")
+                    } else if is_search_target {
+                        u.contains("/search")
+                    } else if is_profile_target {
+                        u.contains("/in/")
+                    } else {
+                        u.contains("/feed") || (!u.contains("/messaging") && !u.contains("/search") && !u.contains("/in/"))
+                    };
+
+                    if matches_purpose {
+                        info!(target: "browser", "Reusing purpose-matched LinkedIn tab at {u} for target {target_url}");
+                        crate::browser::stealth::apply_stealth(p).await?;
                         self.pace().await;
-                        return Ok(p);
+                        return Ok(p.clone());
+                    }
+                }
+
+                // Second pass: general/feed tab fallback ONLY if NOT a messaging tab being repurposed for search/profile
+                for p in &pages {
+                    let u = match p.evaluate("window.location.href").await {
+                        Ok(val) => val.into_value::<String>().unwrap_or_default(),
+                        Err(_) => String::new(),
+                    };
+                    if !u.contains("linkedin.com") || u.contains("protechts.net") || u.contains("chrome-error") {
+                        continue;
+                    }
+
+                    // NEVER steal an active /messaging tab for search or profile actions
+                    if (is_search_target || is_profile_target) && u.contains("/messaging") {
+                        continue;
+                    }
+
+                    // NEVER steal a search tab for messaging or profile actions
+                    if !is_search_target && u.contains("/search") {
+                        continue;
+                    }
+
+                    // If tab is on feed or home, it is safe to repurpose
+                    if u.contains("/feed") || u.ends_with("linkedin.com/") {
+                        info!(target: "browser", "Repurposing idle feed tab at {u} for target {target_url}");
+                        crate::browser::stealth::apply_stealth(p).await?;
+                        self.pace().await;
+                        return Ok(p.clone());
                     }
                 }
             }
@@ -221,6 +274,7 @@ impl BrowserSession {
             }
         }
 
+        info!(target: "browser", "Opening dedicated new tab for {target_url}");
         let page = b
             .new_page(target_url)
             .await
@@ -232,6 +286,12 @@ impl BrowserSession {
 
     pub async fn new_page(&self, url: &str) -> Result<Page, AppError> {
         self.get_or_create_page(url).await
+    }
+
+    pub async fn close_page(&self, page: &Page) -> Result<(), AppError> {
+        use chromiumoxide::cdp::browser_protocol::page::CloseParams;
+        let _ = page.execute(CloseParams::default()).await;
+        Ok(())
     }
 
     pub async fn close(&self) -> Result<(), AppError> {

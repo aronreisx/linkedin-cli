@@ -103,21 +103,26 @@ impl ConnectionManager for ChromiumConnectionManager {
 
         // Ensure authenticated session is active before profile navigation
         let current_url = self.page.url().await.ok().flatten().unwrap_or_default();
-        if !current_url.contains("/feed") {
-            debug!(target: "connection", "Activating authenticated session via feed...");
-            let _ = self.page.goto("https://www.linkedin.com/feed/").await;
-            tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
-        }
+        let target_in = format!("/in/{public_id}");
+        let already_on_profile = current_url.contains(&target_in);
 
-        // Navigate to profile
-        let profile_url = format!("https://www.linkedin.com/in/{public_id}/");
-        self.page
-            .goto(&profile_url)
-            .await
-            .map_err(|e| AppError::NavigationFailed {
-                url: profile_url.clone(),
-                reason: e.to_string(),
-            })?;
+        if !already_on_profile {
+            if !current_url.contains("/feed") {
+                debug!(target: "connection", "Activating authenticated session via feed...");
+                let _ = self.page.goto("https://www.linkedin.com/feed/").await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+            }
+
+            // Navigate to profile
+            let profile_url = format!("https://www.linkedin.com/in/{public_id}/");
+            self.page
+                .goto(&profile_url)
+                .await
+                .map_err(|e| AppError::NavigationFailed {
+                    url: profile_url.clone(),
+                    reason: e.to_string(),
+                })?;
+        }
 
         crate::infra::tripwire::assert_no_tripwire(&self.page).await?;
         tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
