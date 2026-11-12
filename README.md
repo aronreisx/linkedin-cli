@@ -7,7 +7,7 @@ Fast, Unix-composable LinkedIn command-line interface written in Rust. Automates
 ## Overview & Architecture
 
 - **Clean Unix I/O Separation**: Formatted results (`table`, `json`, `ndjson`, `tsv`) are emitted strictly to `stdout`. All operational logs and tracing output stream to `stderr`.
-- **Anti-Bot Human Jitter**: Configurable randomized delays between navigation and interaction steps to mirror natural human behavior.
+- **Anti-Bot Human Jitter & Interactive Tripwire**: Configurable randomized delays and typing cadences to mirror human behavior. Built-in tripwire detection automatically brings the browser window to the foreground, emits an audible chime, and fires a desktop notification when CAPTCHAs or security checkpoints appear.
 - **Keyring & Profile Sandbox**: Credentials stored in the OS keyring; Chromium user data directories are isolated per profile under `~/.linkedin-cli/profiles/<session>`.
 - **Domain Decoupling**: Pure business domain logic separated from CDP infrastructure primitives.
 
@@ -90,6 +90,9 @@ linkedin auth remove work
 # Fetch member profile details
 linkedin profile get alice-smith
 
+# Fetch member profile details with untouched internal Voyager JSON
+linkedin profile get alice-smith --raw --json
+
 # Fetch member contact information (email, phone, websites)
 linkedin profile contact alice-smith
 
@@ -138,10 +141,12 @@ linkedin message send-batch \
 
 ### People Search
 ```bash
-# Search people with filters
-linkedin search people "Software Engineer" \
+# Search people with filters (network, location, and hiring intent)
+linkedin search people "Engineering Manager" \
   --network second \
   --location US \
+  --actively-hiring \
+  --hiring-for "Frontend Engineer" \
   --page 1
 ```
 
@@ -182,6 +187,13 @@ linkedin session list
 linkedin session close --name work
 ```
 Subsequent commands (e.g. `linkedin --session work profile get ...`) automatically detect the active daemon and fast-attach via CDP without launching new Chromium instances.
+
+### Page Evaluation & Debugging
+```bash
+# Evaluate arbitrary JavaScript expression in the live browser tab
+linkedin debug eval "document.title"
+linkedin debug eval --js "Array.from(document.querySelectorAll('a')).map(a => a.href)"
+```
 
 ### Interactive Terminal UI (TUI)
 ```bash
@@ -227,3 +239,15 @@ Verify command logic and variable rendering without executing browser actions:
 ```bash
 linkedin message send alice-smith --text "Test" --dry-run
 ```
+
+---
+
+## AI Agent Skill
+
+This package includes a dedicated AI agent skill in [`skill/`](./skill/SKILL.md) for Antigravity, Claude Code, Cursor, and custom agentic runners.
+
+The skill encapsulates:
+- Best practices and safety protocols (such as mandatory user confirmation for mutating operations).
+- Anti-bot pacing guidelines and tripwire challenge recovery.
+- Atomic recipes for profile reconnaissance, inbox spot-checks, invite triage, and one-off messaging without requiring the full background orchestrator.
+
