@@ -4,12 +4,14 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use linkedin::browser::{BrowserConfig, BrowserSession};
 use linkedin::domain::{
-    ConnectionManager, ConnectionState, ContactInfoFetcher, InboxFilter, InteractionRule,
+    ConnectionManager, ConnectionState, ContactInfoFetcher, FeedSort, InboxFilter, InteractionRule,
     InvitationManager, LinkedInDriver, MessagingService, PeopleSearchService, ProfileScraper,
+    ReactionType, TimelinePost, TimelineService,
 };
 use linkedin::infra::{
     ChromiumConnectionManager, ChromiumContactInfoFetcher, ChromiumLinkedInDriver,
     ChromiumMessagingService, ChromiumPeopleSearchService, ChromiumProfileScraper,
+    ChromiumTimelineService,
 };
 use linkedin::render::{render_data, render_dry_run, DryRunAction, OutputFormat};
 
@@ -95,6 +97,9 @@ enum Commands {
 
     /// Content publishing, post analytics, and staged draft management
     Post(PostArgs),
+
+    /// Timeline and home feed interactions (read updates, react, comment, repost)
+    Feed(FeedArgs),
 
     /// Local draft staging, scheduling, and export (deprecated alias: use 'linkedin post draft')
     #[command(hide = true)]
@@ -413,6 +418,75 @@ enum PostCommands {
     /// Manage staged and scheduled post drafts
     #[command(subcommand)]
     Draft(DraftCommands),
+}
+
+#[derive(clap::Args, Debug)]
+struct FeedArgs {
+    #[command(subcommand)]
+    command: FeedCommands,
+}
+
+#[derive(Subcommand, Debug)]
+enum FeedCommands {
+    /// List posts from the home feed
+    List {
+        /// Maximum number of posts to fetch (default: 10)
+        #[arg(long, default_value = "10")]
+        limit: usize,
+        /// Feed sort order: recent or top (default: recent)
+        #[arg(long, default_value = "recent")]
+        sort: String,
+    },
+    /// List posts from a member's activity feed
+    Member {
+        /// Member public identifier or profile URL
+        handle: String,
+        /// Maximum number of posts to fetch (default: 10)
+        #[arg(long, default_value = "10")]
+        limit: usize,
+    },
+    /// Inspect a single post by URN
+    Get {
+        /// Post URN (e.g. urn:li:activity:123456789)
+        urn: String,
+    },
+    /// List comments on a post
+    Comments {
+        /// Post URN
+        urn: String,
+        /// Maximum number of comments to fetch (default: 10)
+        #[arg(long, default_value = "10")]
+        limit: usize,
+    },
+    /// React to a post (like, celebrate, support, love, insightful, funny)
+    React {
+        /// Post URN
+        urn: String,
+        /// Reaction type: like, celebrate, support, love, insightful, funny
+        #[arg(long, default_value = "like")]
+        r#type: String,
+    },
+    /// Remove a reaction from a post
+    Unreact {
+        /// Post URN
+        urn: String,
+    },
+    /// Add a comment to a post
+    Comment {
+        /// Post URN
+        urn: String,
+        /// Comment text
+        #[arg(long)]
+        text: String,
+    },
+    /// Repost an update (instant repost or quote post with commentary)
+    Repost {
+        /// Post URN
+        urn: String,
+        /// Optional commentary note for a quote repost
+        #[arg(long)]
+        note: Option<String>,
+    },
 }
 
 #[derive(clap::Args, Debug)]
@@ -1179,6 +1253,166 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 }
                 return Ok(());
             }
+            Commands::Feed(FeedArgs { command: FeedCommands::List { limit, sort } }) => {
+                let sort_enum = sort.parse::<FeedSort>().unwrap_or_default();
+                let mock_posts = vec![
+                    TimelinePost {
+                        urn: "urn:li:activity:7100000000000000001".to_string(),
+                        author_name: "Tech Lead".to_string(),
+                        author_handle: Some("tech-lead-sample".to_string()),
+                        author_headline: Some("Building resilient systems".to_string()),
+                        text: "Excited to share our latest milestone with the open-source community!".to_string(),
+                        created_at: Some("2h".to_string()),
+                        reaction_count: 42,
+                        comment_count: 5,
+                        repost_count: 2,
+                        my_reaction: None,
+                        media_urls: vec![],
+                    },
+                    TimelinePost {
+                        urn: "urn:li:activity:7100000000000000002".to_string(),
+                        author_name: "Staff Engineer".to_string(),
+                        author_handle: Some("staff-engineer-sample".to_string()),
+                        author_headline: Some("Distributed Systems & Rust".to_string()),
+                        text: "Why deterministic testing matters for mission-critical software.".to_string(),
+                        created_at: Some("5h".to_string()),
+                        reaction_count: 128,
+                        comment_count: 19,
+                        repost_count: 12,
+                        my_reaction: Some(ReactionType::Like),
+                        media_urls: vec![],
+                    },
+                ];
+                let mut posts = mock_posts;
+                posts.truncate(*limit);
+                if format == OutputFormat::Ndjson {
+                    linkedin::render::stream_ndjson_items(&posts)?;
+                } else {
+                    let results = linkedin::domain::TimelineResult {
+                        total: posts.len(),
+                        posts,
+                        sort: sort_enum,
+                    };
+                    render_data(&results, format, &format!("[DRY-RUN] Home Feed (sorted by {sort})"))?;
+                }
+                return Ok(());
+            }
+            Commands::Feed(FeedArgs { command: FeedCommands::Member { handle, limit } }) => {
+                let mock_posts = vec![
+                    TimelinePost {
+                        urn: "urn:li:activity:7100000000000000003".to_string(),
+                        author_name: handle.clone(),
+                        author_handle: Some(handle.clone()),
+                        author_headline: Some("Software Architect".to_string()),
+                        text: format!("Recent post by {handle}"),
+                        created_at: Some("1d".to_string()),
+                        reaction_count: 15,
+                        comment_count: 2,
+                        repost_count: 0,
+                        my_reaction: None,
+                        media_urls: vec![],
+                    },
+                ];
+                let mut posts = mock_posts;
+                posts.truncate(*limit);
+                if format == OutputFormat::Ndjson {
+                    linkedin::render::stream_ndjson_items(&posts)?;
+                } else {
+                    let results = linkedin::domain::TimelineResult {
+                        total: posts.len(),
+                        posts,
+                        sort: FeedSort::Recent,
+                    };
+                    render_data(&results, format, &format!("[DRY-RUN] Activity feed for {handle}"))?;
+                }
+                return Ok(());
+            }
+            Commands::Feed(FeedArgs { command: FeedCommands::Get { urn } }) => {
+                let mock_post = TimelinePost {
+                    urn: urn.clone(),
+                    author_name: "Sample Author".to_string(),
+                    author_handle: Some("sample-author".to_string()),
+                    author_headline: Some("Engineering".to_string()),
+                    text: "Sample post content for dry-run inspection.".to_string(),
+                    created_at: Some("1d".to_string()),
+                    reaction_count: 88,
+                    comment_count: 12,
+                    repost_count: 4,
+                    my_reaction: None,
+                    media_urls: vec![],
+                };
+                render_data(&mock_post, format, &format!("[DRY-RUN] Post details for {urn}"))?;
+                return Ok(());
+            }
+            Commands::Feed(FeedArgs { command: FeedCommands::Comments { urn, limit } }) => {
+                let mock_comments = vec![
+                    linkedin::domain::PostComment {
+                        urn: "urn:li:comment:1".to_string(),
+                        author_name: "Alice Reviewer".to_string(),
+                        author_handle: Some("alice-reviewer".to_string()),
+                        text: "Great post, thanks for sharing!".to_string(),
+                        created_at: Some("1h".to_string()),
+                    },
+                ];
+                let mut comments = mock_comments;
+                comments.truncate(*limit);
+                if format == OutputFormat::Ndjson {
+                    linkedin::render::stream_ndjson_items(&comments)?;
+                } else {
+                    render_data(&comments, format, &format!("[DRY-RUN] Comments for {urn}"))?;
+                }
+                return Ok(());
+            }
+            Commands::Feed(FeedArgs { command: FeedCommands::React { urn, r#type } }) => {
+                let reaction = r#type.parse::<ReactionType>()?;
+                DryRunAction {
+                    resource: "feed".to_string(),
+                    action: "react".to_string(),
+                    target: Some(urn.clone()),
+                    parameters: serde_json::json!({
+                        "reaction": reaction.as_str(),
+                        "post_urn": urn,
+                        "action": "react_to_post"
+                    }),
+                    dry_run: true,
+                }
+            }
+            Commands::Feed(FeedArgs { command: FeedCommands::Unreact { urn } }) => DryRunAction {
+                resource: "feed".to_string(),
+                action: "unreact".to_string(),
+                target: Some(urn.clone()),
+                parameters: serde_json::json!({
+                    "post_urn": urn,
+                    "action": "remove_reaction_from_post"
+                }),
+                dry_run: true,
+            },
+            Commands::Feed(FeedArgs { command: FeedCommands::Comment { urn, text } }) => {
+                linkedin::domain::validate_comment_content(text)?;
+                DryRunAction {
+                    resource: "feed".to_string(),
+                    action: "comment".to_string(),
+                    target: Some(urn.clone()),
+                    parameters: serde_json::json!({
+                        "post_urn": urn,
+                        "text": text,
+                        "length": text.len(),
+                        "action": "comment_on_post"
+                    }),
+                    dry_run: true,
+                }
+            }
+            Commands::Feed(FeedArgs { command: FeedCommands::Repost { urn, note } }) => DryRunAction {
+                resource: "feed".to_string(),
+                action: "repost".to_string(),
+                target: Some(urn.clone()),
+                parameters: serde_json::json!({
+                    "post_urn": urn,
+                    "commentary": note,
+                    "action": if note.is_some() { "quote_repost" } else { "instant_repost" }
+                }),
+                dry_run: true,
+            },
             other => DryRunAction {
                 resource: "query".to_string(),
                 action: "simulate".to_string(),
@@ -1627,6 +1861,88 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
             } else {
                 let summary = format!("Found {} profiles for query '{}' (page {})", results.profiles.len(), results.query, results.page);
                 render_data(&results, format, &summary)?;
+            }
+        }
+        Commands::Feed(FeedArgs { command }) => {
+            let timeline_svc = ChromiumTimelineService::new(page, rule);
+            match command {
+                FeedCommands::List { limit, sort } => {
+                    let sort_enum = sort.parse::<FeedSort>()?;
+                    let posts = timeline_svc.list_feed(limit, sort_enum).await?;
+                    if format == OutputFormat::Ndjson {
+                        linkedin::render::stream_ndjson_items(&posts)?;
+                    } else {
+                        let summary = format!("Found {} feed post(s) (sorted by {sort})", posts.len());
+                        let result = linkedin::domain::TimelineResult {
+                            total: posts.len(),
+                            posts,
+                            sort: sort_enum,
+                        };
+                        render_data(&result, format, &summary)?;
+                    }
+                }
+                FeedCommands::Member { handle, limit } => {
+                    let posts = timeline_svc.list_member_feed(&handle, limit).await?;
+                    if format == OutputFormat::Ndjson {
+                        linkedin::render::stream_ndjson_items(&posts)?;
+                    } else {
+                        let summary = format!("Found {} activity post(s) for member {handle}", posts.len());
+                        let result = linkedin::domain::TimelineResult {
+                            total: posts.len(),
+                            posts,
+                            sort: FeedSort::Recent,
+                        };
+                        render_data(&result, format, &summary)?;
+                    }
+                }
+                FeedCommands::Get { urn } => {
+                    let post = timeline_svc.get_post(&urn).await?;
+                    let summary = format!(
+                        "Post: {}\nAuthor: {} ({})\nReactions: {} | Comments: {} | Reposts: {}\nText:\n{}",
+                        post.urn,
+                        post.author_name,
+                        post.author_handle.as_deref().unwrap_or("N/A"),
+                        post.reaction_count,
+                        post.comment_count,
+                        post.repost_count,
+                        post.text
+                    );
+                    render_data(&post, format, &summary)?;
+                }
+                FeedCommands::Comments { urn, limit } => {
+                    let comments = timeline_svc.list_comments(&urn, limit).await?;
+                    if format == OutputFormat::Ndjson {
+                        linkedin::render::stream_ndjson_items(&comments)?;
+                    } else {
+                        let summary = format!("Found {} comment(s) on post {urn}", comments.len());
+                        render_data(&comments, format, &summary)?;
+                    }
+                }
+                FeedCommands::React { urn, r#type } => {
+                    let reaction = r#type.parse::<ReactionType>()?;
+                    let res = timeline_svc.react(&urn, reaction).await?;
+                    let summary = format!("Reacted with {} to post {}", reaction.display_label(), urn);
+                    render_data(&res, format, &summary)?;
+                }
+                FeedCommands::Unreact { urn } => {
+                    let res = timeline_svc.unreact(&urn).await?;
+                    let summary = format!("Removed reaction from post {}", urn);
+                    render_data(&res, format, &summary)?;
+                }
+                FeedCommands::Comment { urn, text } => {
+                    let res = timeline_svc.add_comment(&urn, &text).await?;
+                    let summary = format!("Commented on post {}: \"{}\"", urn, text);
+                    render_data(&res, format, &summary)?;
+                }
+                FeedCommands::Repost { urn, note } => {
+                    let res = timeline_svc.repost(&urn, note.as_deref()).await?;
+                    let summary = if let Some(n) = note {
+                        format!("Quote reposted {urn} with thoughts: \"{n}\"")
+                    } else {
+                        format!("Instantly reposted update {urn}")
+                    };
+                    render_data(&res, format, &summary)?;
+                }
             }
         }
         Commands::Invite(InviteArgs { command: InviteCommands::List { sent, received, scroll, limit } }) => {

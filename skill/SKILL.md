@@ -1,6 +1,6 @@
 ---
 name: linkedin-quick-actions
-description: Fast, targeted LinkedIn actions (profile lookups, contact extraction, one-off messages, connection requests, inbox spot-checks, and invite triage) using the linkedin-cli. Use when the user asks to inspect a LinkedIn member, check unread messages, accept invites, or send an ad-hoc message without running the full background orchestrator.
+description: Fast, targeted LinkedIn actions (profile lookups, contact extraction, one-off messages, connection requests, inbox spot-checks, invite triage, and timeline/feed interactions) using the linkedin-cli. Use when the user asks to inspect a LinkedIn member, browse/react/comment on feed posts, check unread messages, accept invites, or send an ad-hoc message without running the full background orchestrator.
 ---
 
 # LinkedIn Quick Actions Skill
@@ -16,7 +16,8 @@ Use this skill when the user asks to:
 2. **Review or triage inbound invitations**: Check pending invitations and accept or ignore them with explicit confirmation.
 3. **Spot-check the inbox**: View the latest unread threads or read a conversation history with a specific member.
 4. **Draft and dispatch a single message or connection request**: Send a targeted 1-on-1 message or connection invite with personalized text approved by the user.
-5. **Sample search results**: Run exploratory people searches before configuring a larger campaign.
+5. **Feed & Timeline interactions**: Read feed updates, inspect post comments, or safely react, comment, or repost with human jitter.
+6. **Sample search results**: Run exploratory people searches before configuring a larger campaign.
 
 > [!IMPORTANT]
 > **Orchestrator vs. Quick Actions**:
@@ -28,8 +29,8 @@ Use this skill when the user asks to:
 ## Core Guidelines & Safety Protocols
 
 1. **Human-in-the-Loop for Mutations**:
-   - For read operations (`profile get`, `inbox list`, `invite list`, `auth status`), execute immediately and display the formatted output.
-   - For mutating actions (`message send`, `connection request`, `invite accept`, `invite ignore`, `post create`), **always present the action or drafted text to the user and obtain confirmation before executing**, or run with `-d, --dry-run` first to demonstrate the payload.
+   - For read operations (`profile get`, `inbox list`, `invite list`, `feed list`, `feed comments`, `auth status`), execute immediately and display the formatted output.
+   - For mutating actions (`message send`, `connection request`, `invite accept`, `invite ignore`, `post create`, `feed react`, `feed comment`, `feed repost`), **always present the action or drafted text to the user and obtain confirmation before executing**, or run with `-d, --dry-run` first to demonstrate the payload.
 2. **Anti-Bot & Rate Limits**:
    - Never run tight loops or mass automation scripts through this skill.
    - Use `--slow-mo <ms>` (e.g. `--slow-mo 500`) if executing consecutive commands.
@@ -127,6 +128,33 @@ linkedin connection request <handle> --note "..."
 Search people with faceted filters to give the user quick market feedback:
 ```bash
 linkedin search people "<title or keywords>" --location "<city or country>" --network second --page 1
+```
+
+---
+
+### 7. Feed & Timeline Engagements
+Read posts, inspect discussions, and engage with explicit user approval:
+```bash
+# Read recent posts from feed (read-only):
+linkedin feed list --limit 5
+
+# Fetch posts from a member's activity:
+linkedin feed member <handle> --limit 5
+
+# List comments on a post:
+linkedin feed comments <urn> --limit 5
+
+# React to a post (always dry-run or verify with user first):
+linkedin feed react <urn> --type like --dry-run
+linkedin feed react <urn> --type insightful
+
+# Comment on a post (always verify drafted text with user first):
+linkedin feed comment <urn> --text "Thanks for sharing this!" --dry-run
+linkedin feed comment <urn> --text "Thanks for sharing this!"
+
+# Repost:
+linkedin feed repost <urn> --dry-run
+linkedin feed repost <urn> --text "Great read!"
 ```
 
 ---

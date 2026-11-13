@@ -159,6 +159,34 @@ linkedin post create --file post.md --media image.png --visibility public
 linkedin post stats urn:li:activity:1234567890
 ```
 
+### Timeline & Feed Interactions
+```bash
+# Read recent or top posts from the main feed
+linkedin feed list --limit 10 --sort recent
+
+# Read recent posts from a specific member's public feed
+linkedin feed member alice-smith --limit 5
+
+# Inspect a specific post and its author details
+linkedin feed get urn:li:activity:7123456789012345678
+
+# List comments on a specific post
+linkedin feed comments urn:li:activity:7123456789012345678 --limit 10
+
+# React to a post (like, celebrate, support, love, insightful, funny)
+linkedin feed react urn:li:activity:7123456789012345678 --type insightful
+
+# Remove your reaction from a post
+linkedin feed unreact urn:li:activity:7123456789012345678
+
+# Post a comment (up to 1,250 characters, typed with human cadence)
+linkedin feed comment urn:li:activity:7123456789012345678 --text "Great insights, thank you for sharing!"
+
+# Repost instantly or quote repost with your own perspective
+linkedin feed repost urn:li:activity:7123456789012345678
+linkedin feed repost urn:li:activity:7123456789012345678 --text "Key takeaways from this discussion..."
+```
+
 ### Post Drafts & Scheduling
 ```bash
 # Stage a post draft with a scheduled publish date

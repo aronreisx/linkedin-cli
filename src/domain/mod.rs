@@ -5,6 +5,7 @@ pub mod messaging_batch;
 pub mod models;
 pub mod page_state;
 pub mod post;
+pub mod timeline;
 pub mod traits;
 pub mod tui_state;
 
@@ -15,5 +16,6 @@ pub use messaging_batch::*;
 pub use models::*;
 pub use page_state::*;
 pub use post::*;
+pub use timeline::*;
 pub use traits::*;
 pub use tui_state::*;

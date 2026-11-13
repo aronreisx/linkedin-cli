@@ -5,6 +5,9 @@ use crate::domain::models::{
     AuthStatus, ContactInfo, InboxFilter, InboxResult,
     Invitation, Message, PeopleSearchResult, Profile, SelfProfile, StatusResult,
 };
+use crate::domain::timeline::{
+    CommentResult, FeedSort, PostComment, ReactionResult, ReactionType, RepostResult, TimelinePost,
+};
 use crate::errors::AppError;
 
 #[async_trait]
@@ -65,4 +68,16 @@ pub trait PeopleSearchService: Send + Sync {
         actively_hiring: bool,
         page: u32,
     ) -> Result<PeopleSearchResult, AppError>;
+}
+
+#[async_trait]
+pub trait TimelineService: Send + Sync {
+    async fn list_feed(&self, limit: usize, sort: FeedSort) -> Result<Vec<TimelinePost>, AppError>;
+    async fn list_member_feed(&self, handle: &str, limit: usize) -> Result<Vec<TimelinePost>, AppError>;
+    async fn get_post(&self, urn: &str) -> Result<TimelinePost, AppError>;
+    async fn list_comments(&self, post_urn: &str, limit: usize) -> Result<Vec<PostComment>, AppError>;
+    async fn react(&self, post_urn: &str, reaction: ReactionType) -> Result<ReactionResult, AppError>;
+    async fn unreact(&self, post_urn: &str) -> Result<ReactionResult, AppError>;
+    async fn add_comment(&self, post_urn: &str, text: &str) -> Result<CommentResult, AppError>;
+    async fn repost(&self, post_urn: &str, commentary: Option<&str>) -> Result<RepostResult, AppError>;
 }
