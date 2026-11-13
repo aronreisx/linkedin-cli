@@ -1,7 +1,7 @@
-use std::time::{Duration, Instant};
-use chromiumoxide::Page;
-use tracing::{info, warn};
 use crate::errors::AppError;
+use chromiumoxide::Page;
+use std::time::{Duration, Instant};
+use tracing::{info, warn};
 
 /// Patterns in URLs indicating an interactive security checkpoint, CAPTCHA, or challenge.
 pub const CHALLENGE_URL_PATTERNS: &[&str] = &[
@@ -15,7 +15,9 @@ pub const CHALLENGE_URL_PATTERNS: &[&str] = &[
 
 /// Returns `true` if the URL contains any known security challenge pattern.
 pub fn is_challenge_url(url: &str) -> bool {
-    CHALLENGE_URL_PATTERNS.iter().any(|pattern| url.contains(pattern))
+    CHALLENGE_URL_PATTERNS
+        .iter()
+        .any(|pattern| url.contains(pattern))
 }
 
 /// Inspects the current page URL and DOM state for security checkpoints, challenges, or CAPTCHA blocks.

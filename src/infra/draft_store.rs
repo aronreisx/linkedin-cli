@@ -1,14 +1,19 @@
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use crate::domain::{Draft, DraftState};
 use crate::errors::AppError;
 use crate::infra::resolve_base_dir;
 
 pub trait DraftStore: Send + Sync {
-    fn create_draft(&self, text: &str, media_path: Option<&str>, scheduled_at: Option<&str>) -> Result<Draft, AppError>;
+    fn create_draft(
+        &self,
+        text: &str,
+        media_path: Option<&str>,
+        scheduled_at: Option<&str>,
+    ) -> Result<Draft, AppError>;
     fn get_draft(&self, id: &str) -> Result<Option<Draft>, AppError>;
     fn list_drafts(&self, filter_state: Option<DraftState>) -> Result<Vec<Draft>, AppError>;
     fn transition_state(
@@ -58,7 +63,10 @@ impl SqliteDraftStore {
     }
 
     fn initialize_schema(&self) -> Result<(), AppError> {
-        let conn = self.conn.lock().map_err(|_| AppError::Database("Database mutex poisoned".to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| AppError::Database("Database mutex poisoned".to_string()))?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS drafts (
                 id TEXT PRIMARY KEY,
@@ -80,8 +88,16 @@ impl SqliteDraftStore {
 }
 
 impl DraftStore for SqliteDraftStore {
-    fn create_draft(&self, text: &str, media_path: Option<&str>, scheduled_at: Option<&str>) -> Result<Draft, AppError> {
-        let conn = self.conn.lock().map_err(|_| AppError::Database("Database mutex poisoned".to_string()))?;
+    fn create_draft(
+        &self,
+        text: &str,
+        media_path: Option<&str>,
+        scheduled_at: Option<&str>,
+    ) -> Result<Draft, AppError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| AppError::Database("Database mutex poisoned".to_string()))?;
         let id = format!("draft-{}", &format!("{:08x}", rand::random::<u32>())[..6]);
         let now = Utc::now().to_rfc3339();
         let state = if scheduled_at.is_some() {
@@ -121,7 +137,10 @@ impl DraftStore for SqliteDraftStore {
     }
 
     fn get_draft(&self, id: &str) -> Result<Option<Draft>, AppError> {
-        let conn = self.conn.lock().map_err(|_| AppError::Database("Database mutex poisoned".to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| AppError::Database("Database mutex poisoned".to_string()))?;
         let mut stmt = conn
             .prepare("SELECT id, text, media_path, scheduled_at, state, post_urn, error_message, created_at, updated_at FROM drafts WHERE id = ?1")
             .map_err(|e| AppError::Database(format!("Failed to prepare query: {e}")))?;
@@ -149,7 +168,10 @@ impl DraftStore for SqliteDraftStore {
     }
 
     fn list_drafts(&self, filter_state: Option<DraftState>) -> Result<Vec<Draft>, AppError> {
-        let conn = self.conn.lock().map_err(|_| AppError::Database("Database mutex poisoned".to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| AppError::Database("Database mutex poisoned".to_string()))?;
         let mut drafts = Vec::new();
 
         if let Some(state) = filter_state {
@@ -214,7 +236,8 @@ impl DraftStore for SqliteDraftStore {
         post_urn: Option<&str>,
         error_message: Option<&str>,
     ) -> Result<Draft, AppError> {
-        let existing = self.get_draft(id)?
+        let existing = self
+            .get_draft(id)?
             .ok_or_else(|| AppError::NotFound(format!("Draft with ID '{id}' not found")))?;
 
         if !existing.state.can_transition_to(next_state) {
@@ -227,7 +250,10 @@ impl DraftStore for SqliteDraftStore {
         }
 
         let now = Utc::now().to_rfc3339();
-        let conn = self.conn.lock().map_err(|_| AppError::Database("Database mutex poisoned".to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| AppError::Database("Database mutex poisoned".to_string()))?;
 
         conn.execute(
             "UPDATE drafts SET state = ?1, post_urn = ?2, error_message = ?3, updated_at = ?4 WHERE id = ?5",
@@ -255,7 +281,10 @@ impl DraftStore for SqliteDraftStore {
     }
 
     fn delete_draft(&self, id: &str) -> Result<bool, AppError> {
-        let conn = self.conn.lock().map_err(|_| AppError::Database("Database mutex poisoned".to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| AppError::Database("Database mutex poisoned".to_string()))?;
         let affected = conn
             .execute("DELETE FROM drafts WHERE id = ?1", params![id])
             .map_err(|e| AppError::Database(format!("Failed to delete draft: {e}")))?;

@@ -385,7 +385,10 @@ impl ChromiumMessagingService {
             .map_err(|e| AppError::Cdp(e.to_string()))?;
 
         let val = res.into_value::<Value>().unwrap_or_default();
-        let success = val.get("success").and_then(|s| s.as_bool()).unwrap_or(false);
+        let success = val
+            .get("success")
+            .and_then(|s| s.as_bool())
+            .unwrap_or(false);
 
         if !success {
             let reason = val
@@ -476,7 +479,10 @@ impl ChromiumMessagingService {
             .map_err(|e| AppError::Cdp(e.to_string()))?;
 
         let v_val = v_res.into_value::<Value>().unwrap_or_default();
-        let verified = v_val.get("verified").and_then(|v| v.as_bool()).unwrap_or(false);
+        let verified = v_val
+            .get("verified")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         if !verified {
             let reason = v_val
@@ -744,7 +750,7 @@ impl MessagingService for ChromiumMessagingService {
                         await sleep(100);
 
                         // 2. Scroll top sentinel directly into view (triggers LinkedIn's IntersectionObserver)
-                        const topSentinel = document.querySelector('.msg-s-message-list__top-of-list') 
+                        const topSentinel = document.querySelector('.msg-s-message-list__top-of-list')
                             || document.querySelector('.msg-s-message-list__loader')
                             || (currentEvents.length > 0 ? currentEvents[0] : null);
                         if (topSentinel) {{

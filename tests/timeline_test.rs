@@ -1,22 +1,35 @@
-use std::str::FromStr;
 use assert_cmd::Command;
 use serde_json::Value;
+use std::str::FromStr;
 
-use linkedin::domain::timeline::{
-    validate_comment_content, FeedSort, ReactionType,
-};
+use linkedin::domain::timeline::{validate_comment_content, FeedSort, ReactionType};
 use linkedin::infra::ChromiumTimelineService;
 
 #[test]
 fn test_reaction_type_parsing_and_display() {
     assert_eq!(ReactionType::from_str("like").unwrap(), ReactionType::Like);
-    assert_eq!(ReactionType::from_str("celebrate").unwrap(), ReactionType::Celebrate);
-    assert_eq!(ReactionType::from_str("applause").unwrap(), ReactionType::Celebrate);
-    assert_eq!(ReactionType::from_str("support").unwrap(), ReactionType::Support);
+    assert_eq!(
+        ReactionType::from_str("celebrate").unwrap(),
+        ReactionType::Celebrate
+    );
+    assert_eq!(
+        ReactionType::from_str("applause").unwrap(),
+        ReactionType::Celebrate
+    );
+    assert_eq!(
+        ReactionType::from_str("support").unwrap(),
+        ReactionType::Support
+    );
     assert_eq!(ReactionType::from_str("love").unwrap(), ReactionType::Love);
     assert_eq!(ReactionType::from_str("heart").unwrap(), ReactionType::Love);
-    assert_eq!(ReactionType::from_str("insightful").unwrap(), ReactionType::Insightful);
-    assert_eq!(ReactionType::from_str("funny").unwrap(), ReactionType::Funny);
+    assert_eq!(
+        ReactionType::from_str("insightful").unwrap(),
+        ReactionType::Insightful
+    );
+    assert_eq!(
+        ReactionType::from_str("funny").unwrap(),
+        ReactionType::Funny
+    );
 
     assert!(ReactionType::from_str("invalid_reaction").is_err());
     assert_eq!(ReactionType::Like.as_str(), "like");
@@ -56,7 +69,9 @@ fn test_activity_urn_normalization() {
         "urn:li:activity:1234567890"
     );
     assert_eq!(
-        ChromiumTimelineService::normalize_activity_urn("https://www.linkedin.com/feed/update/urn:li:activity:9876543210/"),
+        ChromiumTimelineService::normalize_activity_urn(
+            "https://www.linkedin.com/feed/update/urn:li:activity:9876543210/"
+        ),
         "urn:li:activity:9876543210"
     );
 }
@@ -80,7 +95,16 @@ fn test_cli_dry_run_feed_list() {
 fn test_cli_dry_run_feed_member() {
     let mut cmd = Command::cargo_bin("linkedin").unwrap();
     let assert = cmd
-        .args(["feed", "member", "tech-lead-sample", "--limit", "1", "--dry-run", "-o", "json"])
+        .args([
+            "feed",
+            "member",
+            "tech-lead-sample",
+            "--limit",
+            "1",
+            "--dry-run",
+            "-o",
+            "json",
+        ])
         .assert()
         .success();
 
@@ -95,7 +119,14 @@ fn test_cli_dry_run_feed_member() {
 fn test_cli_dry_run_feed_get() {
     let mut cmd = Command::cargo_bin("linkedin").unwrap();
     let assert = cmd
-        .args(["feed", "get", "urn:li:activity:7100000000000000001", "--dry-run", "-o", "json"])
+        .args([
+            "feed",
+            "get",
+            "urn:li:activity:7100000000000000001",
+            "--dry-run",
+            "-o",
+            "json",
+        ])
         .assert()
         .success();
 
@@ -108,7 +139,16 @@ fn test_cli_dry_run_feed_get() {
 fn test_cli_dry_run_feed_comments() {
     let mut cmd = Command::cargo_bin("linkedin").unwrap();
     let assert = cmd
-        .args(["feed", "comments", "urn:li:activity:7100000000000000001", "--limit", "1", "--dry-run", "-o", "json"])
+        .args([
+            "feed",
+            "comments",
+            "urn:li:activity:7100000000000000001",
+            "--limit",
+            "1",
+            "--dry-run",
+            "-o",
+            "json",
+        ])
         .assert()
         .success();
 
@@ -122,7 +162,16 @@ fn test_cli_dry_run_feed_comments() {
 fn test_cli_dry_run_feed_react() {
     let mut cmd = Command::cargo_bin("linkedin").unwrap();
     let assert = cmd
-        .args(["feed", "react", "urn:li:activity:7100000000000000001", "--type", "celebrate", "--dry-run", "-o", "json"])
+        .args([
+            "feed",
+            "react",
+            "urn:li:activity:7100000000000000001",
+            "--type",
+            "celebrate",
+            "--dry-run",
+            "-o",
+            "json",
+        ])
         .assert()
         .success();
 
@@ -139,7 +188,14 @@ fn test_cli_dry_run_feed_react() {
 fn test_cli_dry_run_feed_unreact() {
     let mut cmd = Command::cargo_bin("linkedin").unwrap();
     let assert = cmd
-        .args(["feed", "unreact", "urn:li:activity:7100000000000000001", "--dry-run", "-o", "json"])
+        .args([
+            "feed",
+            "unreact",
+            "urn:li:activity:7100000000000000001",
+            "--dry-run",
+            "-o",
+            "json",
+        ])
         .assert()
         .success();
 
@@ -154,7 +210,16 @@ fn test_cli_dry_run_feed_unreact() {
 fn test_cli_dry_run_feed_comment() {
     let mut cmd = Command::cargo_bin("linkedin").unwrap();
     let assert = cmd
-        .args(["feed", "comment", "urn:li:activity:7100000000000000001", "--text", "Super insightful, thanks!", "--dry-run", "-o", "json"])
+        .args([
+            "feed",
+            "comment",
+            "urn:li:activity:7100000000000000001",
+            "--text",
+            "Super insightful, thanks!",
+            "--dry-run",
+            "-o",
+            "json",
+        ])
         .assert()
         .success();
 
@@ -170,7 +235,16 @@ fn test_cli_dry_run_feed_comment() {
 fn test_cli_dry_run_feed_repost() {
     let mut cmd = Command::cargo_bin("linkedin").unwrap();
     let assert = cmd
-        .args(["feed", "repost", "urn:li:activity:7100000000000000001", "--note", "Worth reading!", "--dry-run", "-o", "json"])
+        .args([
+            "feed",
+            "repost",
+            "urn:li:activity:7100000000000000001",
+            "--note",
+            "Worth reading!",
+            "--dry-run",
+            "-o",
+            "json",
+        ])
         .assert()
         .success();
 

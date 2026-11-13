@@ -1,7 +1,7 @@
-use std::io::Write;
 use clap::ValueEnum;
 use serde::Serialize;
 use serde_json::Value;
+use std::io::Write;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, Default)]
 pub enum OutputFormat {
@@ -36,7 +36,9 @@ pub fn print_stdout_line(line: &str) -> std::io::Result<()> {
 }
 
 /// Streams serializable items line-by-line in real-time as NDJSON
-pub fn stream_ndjson_items<T: Serialize, I: IntoIterator<Item = T>>(items: I) -> Result<(), serde_json::Error> {
+pub fn stream_ndjson_items<T: Serialize, I: IntoIterator<Item = T>>(
+    items: I,
+) -> Result<(), serde_json::Error> {
     for item in items {
         let json_line = serde_json::to_string(&item)?;
         let _ = print_stdout_line(&json_line);
@@ -93,14 +95,30 @@ pub fn render_dry_run(action: DryRunAction, format: OutputFormat) -> Result<(), 
 }
 
 /// Legacy compatibility helper
-pub fn render_output<T: Serialize>(data: &T, as_json: bool, human_summary: &str) -> Result<(), serde_json::Error> {
-    let format = if as_json { OutputFormat::Json } else { OutputFormat::Table };
+pub fn render_output<T: Serialize>(
+    data: &T,
+    as_json: bool,
+    human_summary: &str,
+) -> Result<(), serde_json::Error> {
+    let format = if as_json {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Table
+    };
     render_data(data, format, human_summary)
 }
 
 /// Legacy compatibility helper
-pub fn render_value(val: &Value, as_json: bool, default_summary: &str) -> Result<(), serde_json::Error> {
-    let format = if as_json { OutputFormat::Json } else { OutputFormat::Table };
+pub fn render_value(
+    val: &Value,
+    as_json: bool,
+    default_summary: &str,
+) -> Result<(), serde_json::Error> {
+    let format = if as_json {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Table
+    };
     render_data(val, format, default_summary)
 }
 
@@ -112,14 +130,16 @@ fn print_tsv(val: &Value) {
             }
             if let Some(first_obj) = items[0].as_object() {
                 let keys: Vec<&String> = first_obj.keys().collect();
-                let header = keys.iter().map(|k| k.as_str()).collect::<Vec<_>>().join("\t");
+                let header = keys
+                    .iter()
+                    .map(|k| k.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\t");
                 let _ = print_stdout_line(&header);
                 for item in items {
                     if let Some(obj) = item.as_object() {
-                        let row: Vec<String> = keys
-                            .iter()
-                            .map(|k| format_tsv_field(obj.get(*k)))
-                            .collect();
+                        let row: Vec<String> =
+                            keys.iter().map(|k| format_tsv_field(obj.get(*k))).collect();
                         let _ = print_stdout_line(&row.join("\t"));
                     }
                 }
@@ -149,11 +169,11 @@ fn format_tsv_field(val: Option<&Value>) -> String {
         Some(Value::String(s)) => s.replace(['\t', '\n', '\r'], " "),
         Some(Value::Bool(b)) => b.to_string(),
         Some(Value::Number(n)) => n.to_string(),
-        Some(Value::Array(arr)) => {
-            serde_json::to_string(arr).unwrap_or_default().replace('\t', " ")
-        }
-        Some(Value::Object(obj)) => {
-            serde_json::to_string(obj).unwrap_or_default().replace('\t', " ")
-        }
+        Some(Value::Array(arr)) => serde_json::to_string(arr)
+            .unwrap_or_default()
+            .replace('\t', " "),
+        Some(Value::Object(obj)) => serde_json::to_string(obj)
+            .unwrap_or_default()
+            .replace('\t', " "),
     }
 }

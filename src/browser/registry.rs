@@ -1,10 +1,10 @@
+use crate::errors::AppError;
+use crate::infra::resolve_base_dir;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
-use crate::errors::AppError;
-use crate::infra::resolve_base_dir;
 
 /// Persistent session entry tracking an active, bound Chromium supervisor daemon.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

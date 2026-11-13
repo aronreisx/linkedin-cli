@@ -1,12 +1,12 @@
-use std::sync::Arc;
+use crate::browser::config::BrowserConfig;
+use crate::errors::AppError;
 use chromiumoxide::browser::{Browser, BrowserConfig as CdpBrowserConfig};
 use chromiumoxide::Page;
 use futures::StreamExt;
+use std::sync::Arc;
 use tokio::signal;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
-use crate::browser::config::BrowserConfig;
-use crate::errors::AppError;
 
 pub struct BrowserSession {
     browser: Arc<Mutex<Option<Browser>>>,
@@ -20,9 +20,9 @@ impl BrowserSession {
         // 1. If an explicit CDP websocket or port URL is provided, attach to it.
         if let Some(ref cdp_url) = config.cdp_url {
             info!(target: "browser", "Connecting to existing CDP endpoint at {cdp_url}...");
-            let (browser, mut handler) = Browser::connect(cdp_url)
-                .await
-                .map_err(|e| AppError::Browser(format!("Failed to connect to CDP endpoint {cdp_url}: {e}")))?;
+            let (browser, mut handler) = Browser::connect(cdp_url).await.map_err(|e| {
+                AppError::Browser(format!("Failed to connect to CDP endpoint {cdp_url}: {e}"))
+            })?;
 
             tokio::spawn(async move {
                 while let Some(event) = handler.next().await {
@@ -115,7 +115,8 @@ impl BrowserSession {
         tokio::spawn(async move {
             #[cfg(unix)]
             {
-                let mut sigterm = match signal::unix::signal(signal::unix::SignalKind::terminate()) {
+                let mut sigterm = match signal::unix::signal(signal::unix::SignalKind::terminate())
+                {
                     Ok(s) => Some(s),
                     Err(e) => {
                         warn!(target: "browser", "Failed to register SIGTERM listener: {e}");
@@ -218,7 +219,10 @@ impl BrowserSession {
                         Ok(val) => val.into_value::<String>().unwrap_or_default(),
                         Err(_) => String::new(),
                     };
-                    if !u.contains("linkedin.com") || u.contains("protechts.net") || u.contains("chrome-error") {
+                    if !u.contains("linkedin.com")
+                        || u.contains("protechts.net")
+                        || u.contains("chrome-error")
+                    {
                         continue;
                     }
 
@@ -229,7 +233,10 @@ impl BrowserSession {
                     } else if is_profile_target {
                         u.contains("/in/")
                     } else {
-                        u.contains("/feed") || (!u.contains("/messaging") && !u.contains("/search") && !u.contains("/in/"))
+                        u.contains("/feed")
+                            || (!u.contains("/messaging")
+                                && !u.contains("/search")
+                                && !u.contains("/in/"))
                     };
 
                     if matches_purpose {
@@ -246,7 +253,10 @@ impl BrowserSession {
                         Ok(val) => val.into_value::<String>().unwrap_or_default(),
                         Err(_) => String::new(),
                     };
-                    if !u.contains("linkedin.com") || u.contains("protechts.net") || u.contains("chrome-error") {
+                    if !u.contains("linkedin.com")
+                        || u.contains("protechts.net")
+                        || u.contains("chrome-error")
+                    {
                         continue;
                     }
 
@@ -303,7 +313,10 @@ impl BrowserSession {
                     let _ = b.close().await;
                     let _ = b.wait().await;
                 };
-                if tokio::time::timeout(tokio::time::Duration::from_secs(3), close_fut).await.is_err() {
+                if tokio::time::timeout(tokio::time::Duration::from_secs(3), close_fut)
+                    .await
+                    .is_err()
+                {
                     warn!(target: "browser", "Timed out waiting for Chromium to close; force-killing process...");
                     let _ = b.kill().await;
                 }

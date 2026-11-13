@@ -1,8 +1,7 @@
 use assert_cmd::Command;
 
 use linkedin::domain::{
-    generate_cron_entry, generate_systemd_service, generate_systemd_timer,
-    Draft, DraftState,
+    generate_cron_entry, generate_systemd_service, generate_systemd_timer, Draft, DraftState,
 };
 use linkedin::infra::{DraftStore, SqliteDraftStore};
 
@@ -42,7 +41,10 @@ fn test_draft_store_sqlite_lifecycle_transitions() -> Result<(), Box<dyn std::er
         None,
     )?;
     assert_eq!(published.state, DraftState::Published);
-    assert_eq!(published.post_urn.as_deref(), Some("urn:li:share:987654321"));
+    assert_eq!(
+        published.post_urn.as_deref(),
+        Some("urn:li:share:987654321")
+    );
 
     // 5. Invalid transition: Published cannot go back to Scheduled
     let invalid = store.transition_state(&draft2.id, DraftState::Scheduled, None, None);
@@ -128,9 +130,13 @@ fn test_cli_draft_add_and_export_dry_run() {
     let mut cmd_post_add = Command::cargo_bin("linkedin").expect("linkedin binary exists");
     cmd_post_add
         .args([
-            "post", "draft", "add",
-            "--text", "Launching new Rust systems tool!",
-            "--schedule", "2026-09-07T10:00:00Z",
+            "post",
+            "draft",
+            "add",
+            "--text",
+            "Launching new Rust systems tool!",
+            "--schedule",
+            "2026-09-07T10:00:00Z",
             "--dry-run",
             "--json",
         ])
@@ -144,9 +150,13 @@ fn test_cli_draft_add_and_export_dry_run() {
     let mut cmd_post_export = Command::cargo_bin("linkedin").expect("linkedin binary exists");
     cmd_post_export
         .args([
-            "post", "draft", "export",
-            "--id", "draft-1234",
-            "--format", "cron",
+            "post",
+            "draft",
+            "export",
+            "--id",
+            "draft-1234",
+            "--format",
+            "cron",
             "--dry-run",
             "--json",
         ])
@@ -161,9 +171,12 @@ fn test_cli_draft_add_and_export_dry_run() {
     let mut cmd_add = Command::cargo_bin("linkedin").expect("linkedin binary exists");
     cmd_add
         .args([
-            "draft", "add",
-            "--text", "Launching new Rust systems tool!",
-            "--schedule", "2026-09-07T10:00:00Z",
+            "draft",
+            "add",
+            "--text",
+            "Launching new Rust systems tool!",
+            "--schedule",
+            "2026-09-07T10:00:00Z",
             "--dry-run",
             "--json",
         ])
@@ -177,9 +190,12 @@ fn test_cli_draft_add_and_export_dry_run() {
     let mut cmd_export = Command::cargo_bin("linkedin").expect("linkedin binary exists");
     cmd_export
         .args([
-            "draft", "export",
-            "--id", "draft-1234",
-            "--format", "cron",
+            "draft",
+            "export",
+            "--id",
+            "draft-1234",
+            "--format",
+            "cron",
             "--dry-run",
             "--json",
         ])

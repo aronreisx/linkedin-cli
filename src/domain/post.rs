@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
+use serde::{Deserialize, Serialize};
 
 pub const LINKEDIN_POST_MAX_UTF16_CHARS: usize = 3000;
 

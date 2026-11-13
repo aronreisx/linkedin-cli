@@ -1,8 +1,8 @@
-use std::collections::HashSet;
 use minijinja::Environment;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashSet;
 
 use crate::errors::AppError;
 
@@ -45,7 +45,8 @@ pub fn render_batch_templates(
     let mut env = Environment::new();
     env.add_template("message", template_str)
         .map_err(|e| AppError::InvalidInput(format!("Invalid template syntax: {e}")))?;
-    let tmpl = env.get_template("message")
+    let tmpl = env
+        .get_template("message")
         .map_err(|e| AppError::InvalidInput(format!("Failed to compile template: {e}")))?;
 
     let mut rendered = Vec::with_capacity(recipients.len());
@@ -61,7 +62,11 @@ pub fn render_batch_templates(
 
         let text = tmpl
             .render(recipient_val)
-            .map_err(|e| AppError::InvalidInput(format!("Render error for recipient #{idx} ({recipient_id}): {e}")))?
+            .map_err(|e| {
+                AppError::InvalidInput(format!(
+                    "Render error for recipient #{idx} ({recipient_id}): {e}"
+                ))
+            })?
             .trim()
             .to_string();
 
@@ -88,7 +93,9 @@ pub fn render_batch_templates(
 /// Validates that batch size does not exceed the safe ceiling
 pub fn validate_batch_limits(count: usize, max_batch: usize) -> Result<(), AppError> {
     if count == 0 {
-        return Err(AppError::InvalidInput("Recipient batch cannot be empty".to_string()));
+        return Err(AppError::InvalidInput(
+            "Recipient batch cannot be empty".to_string(),
+        ));
     }
     if count > max_batch {
         return Err(AppError::ConnectionLimit(format!(
@@ -135,7 +142,11 @@ pub fn check_content_variance(messages: &[RenderedMessage]) -> Result<VarianceRe
 
             let intersection = s1.intersection(s2).count() as f64;
             let union = s1.union(s2).count() as f64;
-            let jaccard = if union == 0.0 { 1.0 } else { intersection / union };
+            let jaccard = if union == 0.0 {
+                1.0
+            } else {
+                intersection / union
+            };
 
             total_similarity += jaccard;
             pair_count += 1;

@@ -1,7 +1,7 @@
+use crate::errors::AppError;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
-use crate::errors::AppError;
 
 pub const LINKEDIN_COMMENT_MAX_UTF16_CHARS: usize = 1250;
 
@@ -159,7 +159,9 @@ pub struct RepostResult {
 pub fn validate_comment_content(text: &str) -> Result<(), AppError> {
     let utf16_chars = text.encode_utf16().count();
     if text.trim().is_empty() {
-        return Err(AppError::InvalidInput("Comment text cannot be empty.".to_string()));
+        return Err(AppError::InvalidInput(
+            "Comment text cannot be empty.".to_string(),
+        ));
     }
     if utf16_chars > LINKEDIN_COMMENT_MAX_UTF16_CHARS {
         return Err(AppError::InvalidInput(format!(

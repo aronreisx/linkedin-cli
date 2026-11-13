@@ -3,9 +3,7 @@ use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
 use linkedin::domain::{TuiAction, TuiItem, TuiState, TuiTab};
-use linkedin::infra::{
-    create_mock_tui_items, map_key_to_tui_action, render_tui_terminal,
-};
+use linkedin::infra::{create_mock_tui_items, map_key_to_tui_action, render_tui_terminal};
 
 #[test]
 fn test_tui_split_pane_rendering_without_panics() -> Result<(), Box<dyn std::error::Error>> {
@@ -108,14 +106,29 @@ fn test_tui_key_mapping() {
 
     assert_eq!(map_key_to_tui_action(KeyCode::Char('q')), TuiAction::Quit);
     assert_eq!(map_key_to_tui_action(KeyCode::Esc), TuiAction::Quit);
-    assert_eq!(map_key_to_tui_action(KeyCode::Char('j')), TuiAction::NextItem);
+    assert_eq!(
+        map_key_to_tui_action(KeyCode::Char('j')),
+        TuiAction::NextItem
+    );
     assert_eq!(map_key_to_tui_action(KeyCode::Down), TuiAction::NextItem);
-    assert_eq!(map_key_to_tui_action(KeyCode::Char('k')), TuiAction::PrevItem);
+    assert_eq!(
+        map_key_to_tui_action(KeyCode::Char('k')),
+        TuiAction::PrevItem
+    );
     assert_eq!(map_key_to_tui_action(KeyCode::Up), TuiAction::PrevItem);
     assert_eq!(map_key_to_tui_action(KeyCode::Tab), TuiAction::NextTab);
-    assert_eq!(map_key_to_tui_action(KeyCode::Char('1')), TuiAction::SetTab(TuiTab::Invitations));
-    assert_eq!(map_key_to_tui_action(KeyCode::Char('2')), TuiAction::SetTab(TuiTab::Messages));
-    assert_eq!(map_key_to_tui_action(KeyCode::Char('3')), TuiAction::SetTab(TuiTab::Drafts));
+    assert_eq!(
+        map_key_to_tui_action(KeyCode::Char('1')),
+        TuiAction::SetTab(TuiTab::Invitations)
+    );
+    assert_eq!(
+        map_key_to_tui_action(KeyCode::Char('2')),
+        TuiAction::SetTab(TuiTab::Messages)
+    );
+    assert_eq!(
+        map_key_to_tui_action(KeyCode::Char('3')),
+        TuiAction::SetTab(TuiTab::Drafts)
+    );
     assert_eq!(map_key_to_tui_action(KeyCode::Enter), TuiAction::Select);
 }
 

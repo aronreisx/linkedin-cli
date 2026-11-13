@@ -89,7 +89,11 @@ impl ConnectionManager for ChromiumConnectionManager {
         })
     }
 
-    async fn send_connection_request(&self, handle_or_url: &str, note: Option<&str>) -> Result<StatusResult, AppError> {
+    async fn send_connection_request(
+        &self,
+        handle_or_url: &str,
+        note: Option<&str>,
+    ) -> Result<StatusResult, AppError> {
         let public_id = ChromiumProfileScraper::extract_public_id(handle_or_url);
         info!(target: "connection", "Sending connection request to {public_id}");
 
@@ -130,7 +134,8 @@ impl ConnectionManager for ChromiumConnectionManager {
 
         let note_json = serde_json::to_string(&note).map_err(AppError::Json)?;
 
-        let js_send_routine = format!(r#"
+        let js_send_routine = format!(
+            r#"
             (async () => {{
                 const noteText = {note_json};
                 const publicId = "{public_id}";
@@ -522,7 +527,8 @@ impl ConnectionManager for ChromiumConnectionManager {
 
                 return {{ status: "SENT" }};
             }})()
-        "#);
+        "#
+        );
 
         let mut eval_res = None;
         let mut last_err = None;
@@ -534,7 +540,9 @@ impl ConnectionManager for ChromiumConnectionManager {
                 }
                 Err(e) => {
                     let err_str = e.to_string();
-                    if err_str.contains("navigated or closed") || err_str.contains("Cannot find context") {
+                    if err_str.contains("navigated or closed")
+                        || err_str.contains("Cannot find context")
+                    {
                         debug!(target: "connection", "Page navigated during evaluate (attempt {attempt}/5), retrying in 1s...");
                         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
                         last_err = Some(err_str);
@@ -548,7 +556,9 @@ impl ConnectionManager for ChromiumConnectionManager {
         let eval_res = match eval_res {
             Some(res) => res,
             None => {
-                return Err(AppError::Cdp(last_err.unwrap_or_else(|| "Evaluate failed after retries".to_string())));
+                return Err(AppError::Cdp(
+                    last_err.unwrap_or_else(|| "Evaluate failed after retries".to_string()),
+                ));
             }
         };
 
@@ -608,12 +618,18 @@ impl ConnectionManager for ChromiumConnectionManager {
                         return { status: "SENT" };
                     })()
                 "#;
-                let send_eval = self.page.evaluate(js_click_send).await.map_err(|e| AppError::Cdp(e.to_string()))?;
+                let send_eval = self
+                    .page
+                    .evaluate(js_click_send)
+                    .await
+                    .map_err(|e| AppError::Cdp(e.to_string()))?;
                 let send_val = send_eval.into_value::<Value>().unwrap_or_default();
                 let send_status = send_val["status"].as_str().unwrap_or("UNKNOWN");
                 if send_status != "SENT" {
                     return Err(AppError::ElementNotFound {
-                        selector: format!("Connection send button after note for {public_id}: {send_val:?}"),
+                        selector: format!(
+                            "Connection send button after note for {public_id}: {send_val:?}"
+                        ),
                     });
                 }
                 info!(target: "connection", "Successfully sent connection request with note to {public_id}");
@@ -645,9 +661,9 @@ impl ConnectionManager for ChromiumConnectionManager {
                     state: ConnectionState::Connected,
                 })
             }
-            "LIMIT_REACHED" => {
-                Err(AppError::ConnectionLimit("Weekly connection invitation limit reached".to_string()))
-            }
+            "LIMIT_REACHED" => Err(AppError::ConnectionLimit(
+                "Weekly connection invitation limit reached".to_string(),
+            )),
             "UNAUTHENTICATED" => {
                 let reason = val["reason"].as_str().unwrap_or("Authentication required");
                 Err(AppError::Authentication(format!(
@@ -656,9 +672,16 @@ impl ConnectionManager for ChromiumConnectionManager {
             }
             _ => {
                 let reason = val["reason"].as_str().unwrap_or(status_str);
-                let has_follow = val["top_card_buttons"].as_array().map(|arr| {
-                    arr.iter().any(|b| b.as_str().map(|s| s.eq_ignore_ascii_case("follow")).unwrap_or(false))
-                }).unwrap_or(false);
+                let has_follow = val["top_card_buttons"]
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter().any(|b| {
+                            b.as_str()
+                                .map(|s| s.eq_ignore_ascii_case("follow"))
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false);
 
                 if has_follow && reason.contains("Connect option not found") {
                     return Err(AppError::ProfileInaccessible(format!(
@@ -677,7 +700,11 @@ impl ConnectionManager for ChromiumConnectionManager {
 
 #[async_trait]
 impl InvitationManager for ChromiumConnectionManager {
-    async fn list_sent_invitations(&self, scroll: u32, limit: Option<usize>) -> Result<Vec<Invitation>, AppError> {
+    async fn list_sent_invitations(
+        &self,
+        scroll: u32,
+        limit: Option<usize>,
+    ) -> Result<Vec<Invitation>, AppError> {
         info!(target: "invitations", "Navigating to sent invitations page...");
         self.page
             .goto("https://www.linkedin.com/mynetwork/invitation-manager/sent/".to_string())
@@ -688,10 +715,15 @@ impl InvitationManager for ChromiumConnectionManager {
             })?;
 
         human_jitter(&self.rule).await;
-        self.scrape_invitation_list(scroll, limit, "sent_invitations").await
+        self.scrape_invitation_list(scroll, limit, "sent_invitations")
+            .await
     }
 
-    async fn list_received_invitations(&self, scroll: u32, limit: Option<usize>) -> Result<Vec<Invitation>, AppError> {
+    async fn list_received_invitations(
+        &self,
+        scroll: u32,
+        limit: Option<usize>,
+    ) -> Result<Vec<Invitation>, AppError> {
         info!(target: "invitations", "Navigating to received invitations page...");
         self.page
             .goto("https://www.linkedin.com/mynetwork/invitation-manager/".to_string())
@@ -702,7 +734,8 @@ impl InvitationManager for ChromiumConnectionManager {
             })?;
 
         human_jitter(&self.rule).await;
-        self.scrape_invitation_list(scroll, limit, "received_invitations").await
+        self.scrape_invitation_list(scroll, limit, "received_invitations")
+            .await
     }
 
     async fn withdraw_invitation(&self, handle_or_url: &str) -> Result<bool, AppError> {
@@ -719,7 +752,8 @@ impl InvitationManager for ChromiumConnectionManager {
         human_jitter(&self.rule).await;
 
         let id_json = serde_json::to_string(&public_id).map_err(AppError::Json)?;
-        let js_withdraw = format!(r#"
+        let js_withdraw = format!(
+            r#"
             (([publicId]) => {{
                 return (async () => {{
                     const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -835,7 +869,8 @@ impl InvitationManager for ChromiumConnectionManager {
                     return {{ success: true }};
                 }})();
             }})({id_json})
-        "#);
+        "#
+        );
 
         let res_val = self
             .page
@@ -845,12 +880,18 @@ impl InvitationManager for ChromiumConnectionManager {
             .into_value::<Value>()
             .unwrap_or(Value::Null);
 
-        let success = res_val.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+        let success = res_val
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if success {
             info!(target: "connection", "Successfully withdrew invitation to '{public_id}'");
             Ok(true)
         } else {
-            let reason = res_val.get("reason").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let reason = res_val
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             warn!(target: "connection", "Failed to withdraw invitation to '{public_id}': {reason}");
             Ok(false)
         }
@@ -870,7 +911,8 @@ impl InvitationManager for ChromiumConnectionManager {
         human_jitter(&self.rule).await;
 
         let id_json = serde_json::to_string(&public_id).map_err(AppError::Json)?;
-        let js_accept = format!(r#"
+        let js_accept = format!(
+            r#"
             (([publicId]) => {{
                 return (async () => {{
                     const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -946,7 +988,8 @@ impl InvitationManager for ChromiumConnectionManager {
                     return {{ success: true }};
                 }})();
             }})({id_json})
-        "#);
+        "#
+        );
 
         let res_val = self
             .page
@@ -956,12 +999,18 @@ impl InvitationManager for ChromiumConnectionManager {
             .into_value::<Value>()
             .unwrap_or(Value::Null);
 
-        let success = res_val.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+        let success = res_val
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if success {
             info!(target: "connection", "Successfully accepted invitation from '{public_id}'");
             Ok(true)
         } else {
-            let reason = res_val.get("reason").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let reason = res_val
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             warn!(target: "connection", "Failed to accept invitation from '{public_id}': {reason}");
             Ok(false)
         }
@@ -981,7 +1030,8 @@ impl InvitationManager for ChromiumConnectionManager {
         human_jitter(&self.rule).await;
 
         let id_json = serde_json::to_string(&public_id).map_err(AppError::Json)?;
-        let js_ignore = format!(r#"
+        let js_ignore = format!(
+            r#"
             (([publicId]) => {{
                 return (async () => {{
                     const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -1058,7 +1108,8 @@ impl InvitationManager for ChromiumConnectionManager {
                     return {{ success: true }};
                 }})();
             }})({id_json})
-        "#);
+        "#
+        );
 
         let res_val = self
             .page
@@ -1068,12 +1119,18 @@ impl InvitationManager for ChromiumConnectionManager {
             .into_value::<Value>()
             .unwrap_or(Value::Null);
 
-        let success = res_val.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+        let success = res_val
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if success {
             info!(target: "connection", "Successfully ignored invitation from '{public_id}'");
             Ok(true)
         } else {
-            let reason = res_val.get("reason").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let reason = res_val
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             warn!(target: "connection", "Failed to ignore invitation from '{public_id}': {reason}");
             Ok(false)
         }
@@ -1081,9 +1138,17 @@ impl InvitationManager for ChromiumConnectionManager {
 }
 
 impl ChromiumConnectionManager {
-    async fn scrape_invitation_list(&self, scroll: u32, limit: Option<usize>, target_label: &str) -> Result<Vec<Invitation>, AppError> {
+    async fn scrape_invitation_list(
+        &self,
+        scroll: u32,
+        limit: Option<usize>,
+        target_label: &str,
+    ) -> Result<Vec<Invitation>, AppError> {
         for _ in 0..scroll {
-            let _ = self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)").await;
+            let _ = self
+                .page
+                .evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                .await;
             human_jitter(&self.rule).await;
         }
 
@@ -1224,12 +1289,13 @@ impl ChromiumConnectionManager {
             .await
             .map_err(|e| AppError::Cdp(e.to_string()))?;
 
-        let items: Vec<Invitation> = eval_res
-            .into_value::<Vec<Invitation>>()
-            .map_err(|e| AppError::ExtractionFailed {
-                target: target_label.to_string(),
-                reason: e.to_string(),
-            })?;
+        let items: Vec<Invitation> =
+            eval_res
+                .into_value::<Vec<Invitation>>()
+                .map_err(|e| AppError::ExtractionFailed {
+                    target: target_label.to_string(),
+                    reason: e.to_string(),
+                })?;
 
         if let Some(lim) = limit {
             Ok(items.into_iter().take(lim).collect())

@@ -23,7 +23,13 @@ impl ChromiumProfileScraper {
         let trimmed = handle_or_url.trim().trim_end_matches('/');
         let raw_id = if let Some(pos) = trimmed.find("/in/") {
             let after = &trimmed[pos + 4..];
-            let clean = after.split('?').next().unwrap_or(after).split('#').next().unwrap_or(after);
+            let clean = after
+                .split('?')
+                .next()
+                .unwrap_or(after)
+                .split('#')
+                .next()
+                .unwrap_or(after);
             clean.split('/').next().unwrap_or(clean)
         } else if trimmed.starts_with("http") {
             trimmed.split('/').next_back().unwrap_or(trimmed)
@@ -38,7 +44,11 @@ impl ChromiumProfileScraper {
 
 #[async_trait]
 impl ProfileScraper for ChromiumProfileScraper {
-    async fn scrape_profile(&self, handle_or_url: &str, raw: bool) -> Result<(Profile, Option<Value>), AppError> {
+    async fn scrape_profile(
+        &self,
+        handle_or_url: &str,
+        raw: bool,
+    ) -> Result<(Profile, Option<Value>), AppError> {
         let public_id = Self::extract_public_id(handle_or_url);
         let profile_url = if handle_or_url.starts_with("http") {
             handle_or_url.to_string()
@@ -49,12 +59,14 @@ impl ProfileScraper for ChromiumProfileScraper {
         info!(target: "scraper", "Scraping profile for handle: {public_id}");
         human_jitter(&self.rule).await;
 
-        let decoration = "com.linkedin.voyager.dash.deco.identity.profile.FullProfileWithEntities-91";
+        let decoration =
+            "com.linkedin.voyager.dash.deco.identity.profile.FullProfileWithEntities-91";
         let voyager_url = format!(
             "https://www.linkedin.com/voyager/api/identity/dash/profiles?decorationId={decoration}&memberIdentity={public_id}&q=memberIdentity"
         );
 
-        let (status, ok, body) = InPageTransport::fetch(&self.page, "GET", &voyager_url, &[], None, 20_000).await?;
+        let (status, ok, body) =
+            InPageTransport::fetch(&self.page, "GET", &voyager_url, &[], None, 20_000).await?;
 
         if ok && status == 200 {
             let json_val: Value = serde_json::from_str(&body).map_err(AppError::Json)?;
@@ -96,14 +108,14 @@ impl ProfileScraper for ChromiumProfileScraper {
             })()
         "#;
 
-        let eval_res = self
-            .page
-            .evaluate(js_extract)
-            .await
-            .map_err(|e| AppError::ExtractionFailed {
-                target: profile_url.clone(),
-                reason: e.to_string(),
-            })?;
+        let eval_res =
+            self.page
+                .evaluate(js_extract)
+                .await
+                .map_err(|e| AppError::ExtractionFailed {
+                    target: profile_url.clone(),
+                    reason: e.to_string(),
+                })?;
 
         let val = eval_res
             .into_value::<Value>()
@@ -184,7 +196,10 @@ fn parse_voyager_profile(json_val: &Value, public_id: &str, profile_url: &str) -
         for item in included {
             let entity_type = item.get("$type").and_then(|t| t.as_str()).unwrap_or("");
 
-            if entity_type.contains("identity.profile.Profile") && !entity_type.contains("Position") && !entity_type.contains("Education") {
+            if entity_type.contains("identity.profile.Profile")
+                && !entity_type.contains("Position")
+                && !entity_type.contains("Education")
+            {
                 let item_urn = item.get("entityUrn").and_then(|u| u.as_str());
                 let item_pub_id = item.get("publicIdentifier").and_then(|p| p.as_str());
 
@@ -200,8 +215,14 @@ fn parse_voyager_profile(json_val: &Value, public_id: &str, profile_url: &str) -
                     if let Some(u) = item_urn {
                         urn = Some(u.to_string());
                     }
-                    first_name = item.get("firstName").and_then(|f| f.as_str()).map(|s| s.to_string());
-                    last_name = item.get("lastName").and_then(|l| l.as_str()).map(|s| s.to_string());
+                    first_name = item
+                        .get("firstName")
+                        .and_then(|f| f.as_str())
+                        .map(|s| s.to_string());
+                    last_name = item
+                        .get("lastName")
+                        .and_then(|l| l.as_str())
+                        .map(|s| s.to_string());
                     name = format!(
                         "{} {}",
                         first_name.as_deref().unwrap_or(""),
@@ -210,9 +231,18 @@ fn parse_voyager_profile(json_val: &Value, public_id: &str, profile_url: &str) -
                     .trim()
                     .to_string();
 
-                    headline = item.get("headline").and_then(|h| h.as_str()).map(|s| s.to_string());
-                    summary = item.get("summary").and_then(|s| s.as_str()).map(|s| s.to_string());
-                    location = item.get("locationName").and_then(|l| l.as_str()).map(|s| s.to_string());
+                    headline = item
+                        .get("headline")
+                        .and_then(|h| h.as_str())
+                        .map(|s| s.to_string());
+                    summary = item
+                        .get("summary")
+                        .and_then(|s| s.as_str())
+                        .map(|s| s.to_string());
+                    location = item
+                        .get("locationName")
+                        .and_then(|l| l.as_str())
+                        .map(|s| s.to_string());
                     target_geo_urn = item
                         .get("geoLocation")
                         .and_then(|g| g.get("geoUrn").or_else(|| g.get("*geo")))
@@ -220,11 +250,28 @@ fn parse_voyager_profile(json_val: &Value, public_id: &str, profile_url: &str) -
                         .map(|s| s.to_string());
                 }
             } else if entity_type.contains("identity.profile.Position") {
-                let title = item.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string();
-                let company_name = item.get("companyName").and_then(|c| c.as_str()).unwrap_or("").to_string();
-                let company_urn = item.get("companyUrn").and_then(|c| c.as_str()).map(|s| s.to_string());
-                let loc = item.get("locationName").and_then(|l| l.as_str()).map(|s| s.to_string());
-                let desc = item.get("description").and_then(|d| d.as_str()).map(|s| s.to_string());
+                let title = item
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let company_name = item
+                    .get("companyName")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let company_urn = item
+                    .get("companyUrn")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string());
+                let loc = item
+                    .get("locationName")
+                    .and_then(|l| l.as_str())
+                    .map(|s| s.to_string());
+                let desc = item
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .map(|s| s.to_string());
 
                 let date_range = item.get("dateRange").map(parse_date_range);
 
@@ -239,9 +286,19 @@ fn parse_voyager_profile(json_val: &Value, public_id: &str, profile_url: &str) -
                     });
                 }
             } else if entity_type.contains("identity.profile.Education") {
-                let school_name = item.get("schoolName").and_then(|s| s.as_str()).unwrap_or("").to_string();
-                let degree_name = item.get("degreeName").and_then(|d| d.as_str()).map(|s| s.to_string());
-                let field_of_study = item.get("fieldOfStudy").and_then(|f| f.as_str()).map(|s| s.to_string());
+                let school_name = item
+                    .get("schoolName")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let degree_name = item
+                    .get("degreeName")
+                    .and_then(|d| d.as_str())
+                    .map(|s| s.to_string());
+                let field_of_study = item
+                    .get("fieldOfStudy")
+                    .and_then(|f| f.as_str())
+                    .map(|s| s.to_string());
                 let date_range = item.get("dateRange").map(parse_date_range);
 
                 if !school_name.is_empty() {
@@ -311,17 +368,26 @@ mod tests {
 
     #[test]
     fn test_extract_public_id_variants() {
-        assert_eq!(ChromiumProfileScraper::extract_public_id("john-doe"), "john-doe");
         assert_eq!(
-            ChromiumProfileScraper::extract_public_id("https://www.linkedin.com/in/franciscojmguedes/en"),
+            ChromiumProfileScraper::extract_public_id("john-doe"),
+            "john-doe"
+        );
+        assert_eq!(
+            ChromiumProfileScraper::extract_public_id(
+                "https://www.linkedin.com/in/franciscojmguedes/en"
+            ),
             "franciscojmguedes"
         );
         assert_eq!(
-            ChromiumProfileScraper::extract_public_id("https://www.linkedin.com/in/in%C3%AAsloureiro21/en/"),
+            ChromiumProfileScraper::extract_public_id(
+                "https://www.linkedin.com/in/in%C3%AAsloureiro21/en/"
+            ),
             "inêsloureiro21"
         );
         assert_eq!(
-            ChromiumProfileScraper::extract_public_id("https://www.linkedin.com/in/someone/?miniProfileUrn=xyz#details"),
+            ChromiumProfileScraper::extract_public_id(
+                "https://www.linkedin.com/in/someone/?miniProfileUrn=xyz#details"
+            ),
             "someone"
         );
         assert_eq!(

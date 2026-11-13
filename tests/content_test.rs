@@ -1,6 +1,6 @@
-use std::io::Write;
 use assert_cmd::Command;
 use serde_json::json;
+use std::io::Write;
 use tempfile::NamedTempFile;
 
 use linkedin::domain::{
@@ -82,7 +82,9 @@ Stay tuned for more updates!
 
     let parsed = parse_markdown_post(raw_md)?;
     assert_eq!(parsed.media_path.as_deref(), Some("assets/diagram.png"));
-    assert!(parsed.body.contains("Building modern CLI tooling requires deep attention"));
+    assert!(parsed
+        .body
+        .contains("Building modern CLI tooling requires deep attention"));
     assert!(!parsed.body.contains("---")); // Frontmatter must be stripped
     assert!(parsed.utf16_length > 0);
 
@@ -94,7 +96,9 @@ fn test_post_media_upload_multi_step_protocol() {
     let plan = plan_media_upload("assets/architecture.png");
     assert_eq!(plan.media_file, "assets/architecture.png");
     assert!(plan.asset_urn.starts_with("urn:li:digitalmediaAsset:"));
-    assert!(plan.upload_url.starts_with("https://api.linkedin.com/mediaUpload/temp/"));
+    assert!(plan
+        .upload_url
+        .starts_with("https://api.linkedin.com/mediaUpload/temp/"));
     assert_eq!(plan.steps.len(), 3);
 
     // Verify 3 distinct steps
@@ -128,8 +132,10 @@ Excited to announce our new open source release! 🚀
 
     let mut cmd = Command::cargo_bin("linkedin")?;
     cmd.args([
-        "post", "create",
-        "--file", tmp_post.path().to_str().unwrap(),
+        "post",
+        "create",
+        "--file",
+        tmp_post.path().to_str().unwrap(),
         "--dry-run",
         "--json",
     ])
@@ -138,8 +144,12 @@ Excited to announce our new open source release! 🚀
     .stdout(predicates::str::contains("\"dry_run\": true"))
     .stdout(predicates::str::contains("\"resource\": \"post\""))
     .stdout(predicates::str::contains("\"action\": \"create\""))
-    .stdout(predicates::str::contains("\"media_file\": \"assets/preview.png\""))
-    .stdout(predicates::str::contains("Excited to announce our new open source release! 🚀"));
+    .stdout(predicates::str::contains(
+        "\"media_file\": \"assets/preview.png\"",
+    ))
+    .stdout(predicates::str::contains(
+        "Excited to announce our new open source release! 🚀",
+    ));
 
     Ok(())
 }
@@ -233,7 +243,9 @@ fn test_metrics_zero_impressions_division_safety() -> Result<(), Box<dyn std::er
 fn test_cli_post_stats_dry_run() {
     let mut cmd = Command::cargo_bin("linkedin").expect("linkedin binary exists");
     cmd.args([
-        "post", "stats", "urn:li:activity:7123456789",
+        "post",
+        "stats",
+        "urn:li:activity:7123456789",
         "--dry-run",
         "--json",
     ])

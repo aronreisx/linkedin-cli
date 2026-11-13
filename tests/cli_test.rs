@@ -203,8 +203,14 @@ fn test_dry_run_message_send_with_attachment() {
     assert_eq!(val["action"], "send");
     assert_eq!(val["target"], "john-doe-sample");
     assert_eq!(val["dry_run"], true);
-    assert_eq!(val["parameters"]["attachment"], "assets/test_attachment.png");
-    assert_eq!(val["parameters"]["action"], "send_direct_message_with_attachment");
+    assert_eq!(
+        val["parameters"]["attachment"],
+        "assets/test_attachment.png"
+    );
+    assert_eq!(
+        val["parameters"]["action"],
+        "send_direct_message_with_attachment"
+    );
 }
 
 #[test]
@@ -243,7 +249,14 @@ fn test_output_formats_ndjson_tsv_table_json() {
     // 2. NDJSON
     let mut cmd_ndjson = Command::cargo_bin("linkedin").unwrap();
     let assert_ndjson = cmd_ndjson
-        .args(["connection", "request", "alice", "--dry-run", "-o", "ndjson"])
+        .args([
+            "connection",
+            "request",
+            "alice",
+            "--dry-run",
+            "-o",
+            "ndjson",
+        ])
         .assert()
         .success();
     let stdout_ndjson = String::from_utf8(assert_ndjson.get_output().stdout.clone()).unwrap();
@@ -258,7 +271,10 @@ fn test_output_formats_ndjson_tsv_table_json() {
         .assert()
         .success();
     let stdout_tsv = String::from_utf8(assert_tsv.get_output().stdout.clone()).unwrap();
-    assert!(stdout_tsv.contains('\t'), "TSV output must contain tab delimiters");
+    assert!(
+        stdout_tsv.contains('\t'),
+        "TSV output must contain tab delimiters"
+    );
 
     // 4. Table / Summary
     let mut cmd_table = Command::cargo_bin("linkedin").unwrap();
@@ -300,7 +316,11 @@ fn test_unix_io_stdout_purity_and_quiet_flag() {
         .success();
 
     let stderr = assert_quiet.get_output().stderr.as_slice();
-    assert!(stderr.is_empty(), "stderr must be empty when -q / --quiet is specified, but found: {}", String::from_utf8_lossy(stderr));
+    assert!(
+        stderr.is_empty(),
+        "stderr must be empty when -q / --quiet is specified, but found: {}",
+        String::from_utf8_lossy(stderr)
+    );
 
     // stdout must be valid parseable data with zero log contamination
     let stdout = assert_quiet.get_output().stdout.as_slice();
@@ -324,7 +344,9 @@ fn test_shell_completions_syntax() {
         .args(["completions", "--shell", "zsh"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("#compdef linkedin").or(predicate::str::contains("_linkedin")));
+        .stdout(
+            predicate::str::contains("#compdef linkedin").or(predicate::str::contains("_linkedin")),
+        );
 
     // Fish completion
     let mut cmd_fish = Command::cargo_bin("linkedin").unwrap();
@@ -350,8 +372,14 @@ fn test_manpage_generation_creates_valid_troff() {
     assert!(man_file.exists(), "linkedin.1 must exist");
 
     let content = std::fs::read_to_string(&man_file).expect("Must read manpage");
-    assert!(content.contains(".TH linkedin"), "Manpage must contain standard troff header .TH linkedin");
-    assert!(content.contains("linkedin"), "Manpage must document binary name");
+    assert!(
+        content.contains(".TH linkedin"),
+        "Manpage must contain standard troff header .TH linkedin"
+    );
+    assert!(
+        content.contains("linkedin"),
+        "Manpage must document binary name"
+    );
 }
 
 // =========================================================================
@@ -371,11 +399,19 @@ fn test_ndjson_streaming_and_sigpipe_resilience() {
         .success();
 
     let stdout_str = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
-    let lines: Vec<&str> = stdout_str.lines().filter(|l| !l.trim().is_empty()).collect();
-    assert!(lines.len() >= 3, "Expected at least 3 streamed snippets, got {}", lines.len());
+    let lines: Vec<&str> = stdout_str
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    assert!(
+        lines.len() >= 3,
+        "Expected at least 3 streamed snippets, got {}",
+        lines.len()
+    );
 
     for line in lines {
-        let val: Value = serde_json::from_str(line).expect("Each line must be standalone valid JSON");
+        let val: Value =
+            serde_json::from_str(line).expect("Each line must be standalone valid JSON");
         assert!(val.get("public_identifier").is_some());
     }
 
@@ -470,7 +506,9 @@ fn test_keyring_storage_add_list_switch_remove_in_mock_backend() {
         .args(["auth", "switch", "personal"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Switched active profile to 'personal'"));
+        .stdout(predicate::str::contains(
+            "Switched active profile to 'personal'",
+        ));
 
     // 5. Verify active profile is 'personal'
     let mut cmd_verify_list = Command::cargo_bin("linkedin").unwrap();
@@ -532,7 +570,10 @@ fn test_profile_sandbox_directory_isolation() {
     let dir_work = config_work.resolve_user_data_dir();
     let dir_personal = config_personal.resolve_user_data_dir();
 
-    assert_ne!(dir_work, dir_personal, "Session directories must be completely distinct");
+    assert_ne!(
+        dir_work, dir_personal,
+        "Session directories must be completely distinct"
+    );
     assert!(dir_work.ends_with("profiles/work"));
     assert!(dir_personal.ends_with("profiles/personal"));
 
@@ -547,7 +588,11 @@ fn test_profile_sandbox_directory_isolation() {
     let personal_cookie_file = personal_cookies.join("Cookies");
 
     std::fs::write(&work_cookie_file, "session=work_token; secure; HttpOnly").unwrap();
-    std::fs::write(&personal_cookie_file, "session=personal_token; secure; HttpOnly").unwrap();
+    std::fs::write(
+        &personal_cookie_file,
+        "session=personal_token; secure; HttpOnly",
+    )
+    .unwrap();
 
     let read_work = std::fs::read_to_string(&work_cookie_file).unwrap();
     let read_personal = std::fs::read_to_string(&personal_cookie_file).unwrap();
@@ -565,10 +610,15 @@ fn test_profile_sandbox_directory_isolation() {
         ..Default::default()
     };
     let resolved_active = config_default.resolve_user_data_dir();
-    assert!(resolved_active.ends_with("profiles/work"), "Default session should resolve to active profile 'work'");
+    assert!(
+        resolved_active.ends_with("profiles/work"),
+        "Default session should resolve to active profile 'work'"
+    );
 
     store.set_active_profile("personal").unwrap();
     let resolved_switched = config_default.resolve_user_data_dir();
-    assert!(resolved_switched.ends_with("profiles/personal"), "Default session should resolve to switched profile 'personal'");
+    assert!(
+        resolved_switched.ends_with("profiles/personal"),
+        "Default session should resolve to switched profile 'personal'"
+    );
 }
-

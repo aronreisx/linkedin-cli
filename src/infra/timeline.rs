@@ -1,7 +1,7 @@
-use std::time::Duration;
 use async_trait::async_trait;
 use chromiumoxide::Page;
 use serde_json::Value;
+use std::time::Duration;
 use tracing::info;
 
 use crate::domain::timeline::{
@@ -34,7 +34,10 @@ impl ChromiumTimelineService {
         } else if trimmed.chars().all(|c| c.is_ascii_digit()) {
             format!("urn:li:activity:{trimmed}")
         } else if let Some(pos) = trimmed.find("activity:") {
-            format!("urn:li:activity:{}", trimmed[pos + 9..].trim_end_matches('/'))
+            format!(
+                "urn:li:activity:{}",
+                trimmed[pos + 9..].trim_end_matches('/')
+            )
         } else {
             trimmed.to_string()
         }
@@ -94,7 +97,11 @@ impl TimelineService for ChromiumTimelineService {
         Ok(posts)
     }
 
-    async fn list_member_feed(&self, handle: &str, limit: usize) -> Result<Vec<TimelinePost>, AppError> {
+    async fn list_member_feed(
+        &self,
+        handle: &str,
+        limit: usize,
+    ) -> Result<Vec<TimelinePost>, AppError> {
         let public_id = ChromiumProfileScraper::extract_public_id(handle);
         let activity_url = format!("https://www.linkedin.com/in/{public_id}/recent-activity/all/");
 
@@ -164,11 +171,17 @@ impl TimelineService for ChromiumTimelineService {
         if let Some(post) = posts.into_iter().find(|p| p.urn == urn) {
             Ok(post)
         } else {
-            Err(AppError::NotFound(format!("Post with URN {urn} not found on page")))
+            Err(AppError::NotFound(format!(
+                "Post with URN {urn} not found on page"
+            )))
         }
     }
 
-    async fn list_comments(&self, raw_urn: &str, limit: usize) -> Result<Vec<PostComment>, AppError> {
+    async fn list_comments(
+        &self,
+        raw_urn: &str,
+        limit: usize,
+    ) -> Result<Vec<PostComment>, AppError> {
         let urn = Self::normalize_activity_urn(raw_urn);
         let post_url = format!("https://www.linkedin.com/feed/update/{urn}/");
 
@@ -229,7 +242,11 @@ impl TimelineService for ChromiumTimelineService {
         Ok(comments)
     }
 
-    async fn react(&self, raw_urn: &str, reaction: ReactionType) -> Result<ReactionResult, AppError> {
+    async fn react(
+        &self,
+        raw_urn: &str,
+        reaction: ReactionType,
+    ) -> Result<ReactionResult, AppError> {
         let urn = Self::normalize_activity_urn(raw_urn);
         let post_url = format!("https://www.linkedin.com/feed/update/{urn}/");
 
@@ -308,8 +325,12 @@ impl TimelineService for ChromiumTimelineService {
         let success = res_val["success"].as_bool().unwrap_or(false);
 
         if !success {
-            let reason = res_val["reason"].as_str().unwrap_or("Failed to click reaction element");
-            return Err(AppError::Browser(format!("React failed for {urn}: {reason}")));
+            let reason = res_val["reason"]
+                .as_str()
+                .unwrap_or("Failed to click reaction element");
+            return Err(AppError::Browser(format!(
+                "React failed for {urn}: {reason}"
+            )));
         }
 
         human_jitter(&self.rule).await;
@@ -369,8 +390,12 @@ impl TimelineService for ChromiumTimelineService {
         let success = res_val["success"].as_bool().unwrap_or(false);
 
         if !success {
-            let reason = res_val["reason"].as_str().unwrap_or("Failed to unreact to post");
-            return Err(AppError::Browser(format!("Unreact failed for {urn}: {reason}")));
+            let reason = res_val["reason"]
+                .as_str()
+                .unwrap_or("Failed to unreact to post");
+            return Err(AppError::Browser(format!(
+                "Unreact failed for {urn}: {reason}"
+            )));
         }
 
         human_jitter(&self.rule).await;
@@ -403,7 +428,8 @@ impl TimelineService for ChromiumTimelineService {
         assert_no_tripwire(&self.page).await?;
 
         // 1. Focus comment box
-        let comment_box_selector = ".editor-content p, div[role='textbox'], .comments-comment-box__editor";
+        let comment_box_selector =
+            ".editor-content p, div[role='textbox'], .comments-comment-box__editor";
         let js_focus = format!(
             r#"
             (() => {{
@@ -474,7 +500,11 @@ impl TimelineService for ChromiumTimelineService {
         })
     }
 
-    async fn repost(&self, raw_urn: &str, commentary: Option<&str>) -> Result<RepostResult, AppError> {
+    async fn repost(
+        &self,
+        raw_urn: &str,
+        commentary: Option<&str>,
+    ) -> Result<RepostResult, AppError> {
         let urn = Self::normalize_activity_urn(raw_urn);
         let post_url = format!("https://www.linkedin.com/feed/update/{urn}/");
 

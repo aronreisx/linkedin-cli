@@ -1,9 +1,9 @@
-use std::time::Duration;
+use crate::errors::AppError;
 use chromiumoxide::cdp::browser_protocol::input::InsertTextParams;
 use chromiumoxide::Page;
 use rand::Rng;
+use std::time::Duration;
 use tracing::debug;
-use crate::errors::AppError;
 
 /// Configuration for the Gaussian human typing engine.
 #[derive(Debug, Clone)]
@@ -48,12 +48,32 @@ pub fn sample_gaussian_delay(min_ms: u64, max_ms: u64) -> u64 {
 pub fn get_adjacent_qwerty_key(c: char) -> char {
     let lower = c.to_ascii_lowercase();
     let adj = match lower {
-        'q' => 'w', 'w' => 'e', 'e' => 'r', 'r' => 't', 't' => 'y',
-        'y' => 'u', 'u' => 'i', 'i' => 'o', 'o' => 'p', 'p' => 'o',
-        'a' => 's', 's' => 'd', 'd' => 'f', 'f' => 'g', 'g' => 'h',
-        'h' => 'j', 'j' => 'k', 'k' => 'l', 'l' => 'k',
-        'z' => 'x', 'x' => 'c', 'c' => 'v', 'v' => 'b', 'b' => 'n',
-        'n' => 'm', 'm' => 'n',
+        'q' => 'w',
+        'w' => 'e',
+        'e' => 'r',
+        'r' => 't',
+        't' => 'y',
+        'y' => 'u',
+        'u' => 'i',
+        'i' => 'o',
+        'o' => 'p',
+        'p' => 'o',
+        'a' => 's',
+        's' => 'd',
+        'd' => 'f',
+        'f' => 'g',
+        'g' => 'h',
+        'h' => 'j',
+        'j' => 'k',
+        'k' => 'l',
+        'l' => 'k',
+        'z' => 'x',
+        'x' => 'c',
+        'c' => 'v',
+        'v' => 'b',
+        'b' => 'n',
+        'n' => 'm',
+        'm' => 'n',
         _ => 'e',
     };
     if c.is_uppercase() {
@@ -65,7 +85,9 @@ pub fn get_adjacent_qwerty_key(c: char) -> char {
 
 /// Dispatches a key press (KeyDown followed by KeyUp) using physical CDP events.
 pub async fn press_key(page: &Page, key: &str) -> Result<(), AppError> {
-    use chromiumoxide::cdp::browser_protocol::input::{DispatchKeyEventParams, DispatchKeyEventType};
+    use chromiumoxide::cdp::browser_protocol::input::{
+        DispatchKeyEventParams, DispatchKeyEventType,
+    };
 
     if let Some(key_definition) = chromiumoxide::keys::get_key_definition(key) {
         let mut cmd = DispatchKeyEventParams::builder();
@@ -87,11 +109,22 @@ pub async fn press_key(page: &Page, key: &str) -> Result<(), AppError> {
             .windows_virtual_key_code(key_definition.key_code)
             .native_virtual_key_code(key_definition.key_code);
 
-        let down_cmd = cmd.clone().r#type(key_down_event_type).build().map_err(|e| AppError::Cdp(e.to_string()))?;
-        page.execute(down_cmd).await.map_err(|e| AppError::Cdp(e.to_string()))?;
+        let down_cmd = cmd
+            .clone()
+            .r#type(key_down_event_type)
+            .build()
+            .map_err(|e| AppError::Cdp(e.to_string()))?;
+        page.execute(down_cmd)
+            .await
+            .map_err(|e| AppError::Cdp(e.to_string()))?;
 
-        let up_cmd = cmd.r#type(DispatchKeyEventType::KeyUp).build().map_err(|e| AppError::Cdp(e.to_string()))?;
-        page.execute(up_cmd).await.map_err(|e| AppError::Cdp(e.to_string()))?;
+        let up_cmd = cmd
+            .r#type(DispatchKeyEventType::KeyUp)
+            .build()
+            .map_err(|e| AppError::Cdp(e.to_string()))?;
+        page.execute(up_cmd)
+            .await
+            .map_err(|e| AppError::Cdp(e.to_string()))?;
 
         Ok(())
     } else {
@@ -153,7 +186,9 @@ pub async fn human_type(
         if ch.is_uppercase() {
             // Physical shift key travel / hold delay
             delay += rand::thread_rng().gen_range(70..=150);
-        } else if ch.is_ascii_digit() || (ch.is_ascii_punctuation() && !matches!(ch, '.' | ',' | '!' | '?' | ';' | ':')) {
+        } else if ch.is_ascii_digit()
+            || (ch.is_ascii_punctuation() && !matches!(ch, '.' | ',' | '!' | '?' | ';' | ':'))
+        {
             // Hand travel delay for top row numbers and symbols
             delay += rand::thread_rng().gen_range(50..=120);
         } else if matches!(ch, '.' | ',' | '!' | '?' | ';' | ':') {

@@ -38,11 +38,18 @@ impl DraftState {
     pub fn can_transition_to(&self, next: DraftState) -> bool {
         match (self, next) {
             // Draft can become Scheduled, Published, or Archived
-            (Self::Draft, Self::Scheduled) | (Self::Draft, Self::Published) | (Self::Draft, Self::Archived) => true,
+            (Self::Draft, Self::Scheduled)
+            | (Self::Draft, Self::Published)
+            | (Self::Draft, Self::Archived) => true,
             // Scheduled can become Published, Failed, Draft, or Archived
-            (Self::Scheduled, Self::Published) | (Self::Scheduled, Self::Failed) | (Self::Scheduled, Self::Draft) | (Self::Scheduled, Self::Archived) => true,
+            (Self::Scheduled, Self::Published)
+            | (Self::Scheduled, Self::Failed)
+            | (Self::Scheduled, Self::Draft)
+            | (Self::Scheduled, Self::Archived) => true,
             // Failed can retry back to Scheduled or Draft
-            (Self::Failed, Self::Scheduled) | (Self::Failed, Self::Draft) | (Self::Failed, Self::Archived) => true,
+            (Self::Failed, Self::Scheduled)
+            | (Self::Failed, Self::Draft)
+            | (Self::Failed, Self::Archived) => true,
             // Published can only be Archived
             (Self::Published, Self::Archived) => true,
             // Archived is terminal or can restore to Draft
@@ -68,12 +75,19 @@ pub struct Draft {
 /// Generates crontab line syntax for a scheduled draft
 pub fn generate_cron_entry(draft: &Draft, bin_path: Option<&str>) -> Result<String, AppError> {
     let sched_str = draft.scheduled_at.as_deref().ok_or_else(|| {
-        AppError::InvalidInput(format!("Draft {} does not have a scheduled timestamp", draft.id))
+        AppError::InvalidInput(format!(
+            "Draft {} does not have a scheduled timestamp",
+            draft.id
+        ))
     })?;
 
     let dt = DateTime::parse_from_rfc3339(sched_str)
         .map(|d| d.with_timezone(&Utc))
-        .map_err(|e| AppError::InvalidInput(format!("Invalid RFC3339 scheduled timestamp '{sched_str}': {e}")))?;
+        .map_err(|e| {
+            AppError::InvalidInput(format!(
+                "Invalid RFC3339 scheduled timestamp '{sched_str}': {e}"
+            ))
+        })?;
 
     let bin = bin_path.unwrap_or("linkedin");
     use chrono::Datelike;
@@ -113,12 +127,19 @@ StandardError=journal\n",
 /// Generates systemd .timer file content for a scheduled draft
 pub fn generate_systemd_timer(draft: &Draft) -> Result<String, AppError> {
     let sched_str = draft.scheduled_at.as_deref().ok_or_else(|| {
-        AppError::InvalidInput(format!("Draft {} does not have a scheduled timestamp", draft.id))
+        AppError::InvalidInput(format!(
+            "Draft {} does not have a scheduled timestamp",
+            draft.id
+        ))
     })?;
 
     let dt = DateTime::parse_from_rfc3339(sched_str)
         .map(|d| d.with_timezone(&Utc))
-        .map_err(|e| AppError::InvalidInput(format!("Invalid RFC3339 scheduled timestamp '{sched_str}': {e}")))?;
+        .map_err(|e| {
+            AppError::InvalidInput(format!(
+                "Invalid RFC3339 scheduled timestamp '{sched_str}': {e}"
+            ))
+        })?;
 
     let calendar_format = dt.format("%Y-%m-%d %H:%M:%S UTC").to_string();
 

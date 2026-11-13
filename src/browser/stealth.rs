@@ -1,6 +1,6 @@
+use crate::errors::AppError;
 use chromiumoxide::Page;
 use tracing::debug;
-use crate::errors::AppError;
 
 /// Stealth JavaScript payload to mask headless Chromium detection vectors.
 /// Based on Playwright-Stealth / Puppeteer-Extra-Stealth evasions.
@@ -138,7 +138,7 @@ pub const STEALTH_JS_PAYLOAD: &str = r#"
 "#;
 
 /// Applies anti-detection stealth scripts to a Chromium page instance.
-/// 
+///
 /// Uses `Page.addScriptToEvaluateOnNewDocument` so any future navigation within the
 /// page automatically runs the stealth shims prior to execution of any site scripts.
 /// Also evaluates the script immediately in the currently loaded document.
@@ -146,7 +146,9 @@ pub async fn apply_stealth(page: &Page) -> Result<(), AppError> {
     debug!(target: "browser", "Applying CDP stealth script on new document...");
     page.evaluate_on_new_document(STEALTH_JS_PAYLOAD)
         .await
-        .map_err(|e| AppError::Browser(format!("Failed to register stealth on new document: {e}")))?;
+        .map_err(|e| {
+            AppError::Browser(format!("Failed to register stealth on new document: {e}"))
+        })?;
 
     // Also evaluate in currently active document if one exists
     let _ = page.evaluate(STEALTH_JS_PAYLOAD).await;

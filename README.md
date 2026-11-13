@@ -1,5 +1,11 @@
 # LinkedIn CLI (`linkedin`)
 
+[![CI](https://github.com/aronreisx/linkedin-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/aronreisx/linkedin-cli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/aronreisx/linkedin-cli?color=blue)](https://github.com/aronreisx/linkedin-cli/releases)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-2021%20edition-orange.svg)](https://www.rust-lang.org)
+[![Platform](https://img.shields.io/badge/platform-macos%20%7C%20linux-lightgrey.svg)]()
+
 Fast, Unix-composable LinkedIn command-line interface written in Rust. Automates LinkedIn workflows directly via the Chrome DevTools Protocol (CDP) using `chromiumoxide`.
 
 ---

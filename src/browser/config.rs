@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use crate::infra::{resolve_base_dir, resolve_credential_store};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct BrowserConfig {
@@ -31,7 +31,9 @@ impl BrowserConfig {
         let base_dir = resolve_base_dir();
         let target_session = if self.session_name == "default" {
             let store = resolve_credential_store();
-            store.get_active_profile().unwrap_or_else(|_| "default".to_string())
+            store
+                .get_active_profile()
+                .unwrap_or_else(|_| "default".to_string())
         } else {
             self.session_name.clone()
         };

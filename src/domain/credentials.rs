@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ProfileCredentials {

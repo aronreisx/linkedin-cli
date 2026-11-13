@@ -1,17 +1,27 @@
 use assert_cmd::Command;
 use std::str::FromStr;
 
-use linkedin::domain::jobs::{
-    DatePosted, ExperienceLevel, JobSearchFilter, WorkplaceType,
-};
+use linkedin::domain::jobs::{DatePosted, ExperienceLevel, JobSearchFilter, WorkplaceType};
 use linkedin::infra::ChromiumJobService;
 
 #[test]
 fn test_workplace_type_parsing() {
-    assert_eq!(WorkplaceType::from_str("onsite").unwrap(), WorkplaceType::OnSite);
-    assert_eq!(WorkplaceType::from_str("on-site").unwrap(), WorkplaceType::OnSite);
-    assert_eq!(WorkplaceType::from_str("remote").unwrap(), WorkplaceType::Remote);
-    assert_eq!(WorkplaceType::from_str("hybrid").unwrap(), WorkplaceType::Hybrid);
+    assert_eq!(
+        WorkplaceType::from_str("onsite").unwrap(),
+        WorkplaceType::OnSite
+    );
+    assert_eq!(
+        WorkplaceType::from_str("on-site").unwrap(),
+        WorkplaceType::OnSite
+    );
+    assert_eq!(
+        WorkplaceType::from_str("remote").unwrap(),
+        WorkplaceType::Remote
+    );
+    assert_eq!(
+        WorkplaceType::from_str("hybrid").unwrap(),
+        WorkplaceType::Hybrid
+    );
     assert!(WorkplaceType::from_str("invalid").is_err());
 
     assert_eq!(WorkplaceType::OnSite.linkedin_code(), "1");
@@ -21,11 +31,20 @@ fn test_workplace_type_parsing() {
 
 #[test]
 fn test_date_posted_parsing() {
-    assert_eq!(DatePosted::from_str("past-24h").unwrap(), DatePosted::Past24h);
+    assert_eq!(
+        DatePosted::from_str("past-24h").unwrap(),
+        DatePosted::Past24h
+    );
     assert_eq!(DatePosted::from_str("24h").unwrap(), DatePosted::Past24h);
-    assert_eq!(DatePosted::from_str("past-week").unwrap(), DatePosted::PastWeek);
+    assert_eq!(
+        DatePosted::from_str("past-week").unwrap(),
+        DatePosted::PastWeek
+    );
     assert_eq!(DatePosted::from_str("week").unwrap(), DatePosted::PastWeek);
-    assert_eq!(DatePosted::from_str("past-month").unwrap(), DatePosted::PastMonth);
+    assert_eq!(
+        DatePosted::from_str("past-month").unwrap(),
+        DatePosted::PastMonth
+    );
     assert_eq!(DatePosted::from_str("any").unwrap(), DatePosted::Any);
     assert!(DatePosted::from_str("past-year").is_err());
 
@@ -37,12 +56,30 @@ fn test_date_posted_parsing() {
 
 #[test]
 fn test_experience_level_parsing() {
-    assert_eq!(ExperienceLevel::from_str("internship").unwrap(), ExperienceLevel::Internship);
-    assert_eq!(ExperienceLevel::from_str("entry").unwrap(), ExperienceLevel::Entry);
-    assert_eq!(ExperienceLevel::from_str("associate").unwrap(), ExperienceLevel::Associate);
-    assert_eq!(ExperienceLevel::from_str("mid-senior").unwrap(), ExperienceLevel::MidSenior);
-    assert_eq!(ExperienceLevel::from_str("director").unwrap(), ExperienceLevel::Director);
-    assert_eq!(ExperienceLevel::from_str("executive").unwrap(), ExperienceLevel::Executive);
+    assert_eq!(
+        ExperienceLevel::from_str("internship").unwrap(),
+        ExperienceLevel::Internship
+    );
+    assert_eq!(
+        ExperienceLevel::from_str("entry").unwrap(),
+        ExperienceLevel::Entry
+    );
+    assert_eq!(
+        ExperienceLevel::from_str("associate").unwrap(),
+        ExperienceLevel::Associate
+    );
+    assert_eq!(
+        ExperienceLevel::from_str("mid-senior").unwrap(),
+        ExperienceLevel::MidSenior
+    );
+    assert_eq!(
+        ExperienceLevel::from_str("director").unwrap(),
+        ExperienceLevel::Director
+    );
+    assert_eq!(
+        ExperienceLevel::from_str("executive").unwrap(),
+        ExperienceLevel::Executive
+    );
     assert!(ExperienceLevel::from_str("founder").is_err());
 
     assert_eq!(ExperienceLevel::MidSenior.linkedin_code(), "4");
@@ -53,7 +90,10 @@ fn test_experience_level_parsing() {
 fn test_job_search_url_builder() {
     // 1. Default empty
     let empty_filter = JobSearchFilter::default();
-    assert_eq!(empty_filter.build_url(), "https://www.linkedin.com/jobs/search/");
+    assert_eq!(
+        empty_filter.build_url(),
+        "https://www.linkedin.com/jobs/search/"
+    );
 
     // 2. Keywords and location
     let filter = JobSearchFilter {
@@ -87,7 +127,10 @@ fn test_job_search_url_builder() {
 
 #[test]
 fn test_normalize_job_id() {
-    assert_eq!(ChromiumJobService::normalize_job_id("4123456789"), "4123456789");
+    assert_eq!(
+        ChromiumJobService::normalize_job_id("4123456789"),
+        "4123456789"
+    );
     assert_eq!(
         ChromiumJobService::normalize_job_id("urn:li:jobPosting:4123456789"),
         "4123456789"
@@ -97,11 +140,15 @@ fn test_normalize_job_id() {
         "4123456789"
     );
     assert_eq!(
-        ChromiumJobService::normalize_job_id("https://www.linkedin.com/jobs/view/4123456789?refId=abc&trackingId=xyz"),
+        ChromiumJobService::normalize_job_id(
+            "https://www.linkedin.com/jobs/view/4123456789?refId=abc&trackingId=xyz"
+        ),
         "4123456789"
     );
     assert_eq!(
-        ChromiumJobService::normalize_job_id("https://www.linkedin.com/jobs/search/?currentJobId=4123456789&keywords=Rust"),
+        ChromiumJobService::normalize_job_id(
+            "https://www.linkedin.com/jobs/search/?currentJobId=4123456789&keywords=Rust"
+        ),
         "4123456789"
     );
 }
@@ -113,7 +160,9 @@ fn test_cli_help_displays_jobs_subcommand() {
         .assert()
         .success()
         .stdout(predicates::str::contains("jobs"))
-        .stdout(predicates::str::contains("Job search, details extraction, and saved jobs management"));
+        .stdout(predicates::str::contains(
+            "Job search, details extraction, and saved jobs management",
+        ));
 
     let mut jobs_cmd = Command::cargo_bin("linkedin").unwrap();
     jobs_cmd

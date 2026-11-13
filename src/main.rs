@@ -1,13 +1,13 @@
-use std::path::PathBuf;
 use clap::{CommandFactory, Parser, Subcommand};
+use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use linkedin::browser::{BrowserConfig, BrowserSession};
 use linkedin::domain::{
     ConnectionManager, ConnectionState, ContactInfoFetcher, DatePosted, ExperienceLevel, FeedSort,
     InboxFilter, InteractionRule, InvitationManager, JobDetails, JobSearchFilter, JobService,
-    JobSummary, LinkedInDriver, MessagingService, PeopleSearchService, ProfileScraper, ReactionType,
-    TimelinePost, TimelineService, WorkplaceType,
+    JobSummary, LinkedInDriver, MessagingService, PeopleSearchService, ProfileScraper,
+    ReactionType, TimelinePost, TimelineService, WorkplaceType,
 };
 use linkedin::infra::{
     ChromiumConnectionManager, ChromiumContactInfoFetcher, ChromiumJobService,
@@ -24,7 +24,12 @@ use linkedin::render::{render_data, render_dry_run, DryRunAction, OutputFormat};
 )]
 struct Cli {
     /// Bound session name (default: $LINKEDIN_CLI_SESSION or 'default')
-    #[arg(long, global = true, env = "LINKEDIN_CLI_SESSION", default_value = "default")]
+    #[arg(
+        long,
+        global = true,
+        env = "LINKEDIN_CLI_SESSION",
+        default_value = "default"
+    )]
     session: String,
 
     /// Output format: table, json, ndjson, tsv (default: table)
@@ -761,18 +766,30 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
             return Ok(());
         }
         Commands::Manpage { out_dir } => {
-            std::fs::create_dir_all(out_dir)
-                .map_err(|e| linkedin::errors::AppError::Browser(format!("Failed to create manpage dir: {e}")))?;
+            std::fs::create_dir_all(out_dir).map_err(|e| {
+                linkedin::errors::AppError::Browser(format!("Failed to create manpage dir: {e}"))
+            })?;
             let cmd = Cli::command();
             let file_path = out_dir.join("linkedin.1");
-            let mut file = std::fs::File::create(&file_path)
-                .map_err(|e| linkedin::errors::AppError::Browser(format!("Failed to create file: {e}")))?;
-            clap_mangen::Man::new(cmd).render(&mut file)
-                .map_err(|e| linkedin::errors::AppError::Browser(format!("Failed to render manpage: {e}")))?;
+            let mut file = std::fs::File::create(&file_path).map_err(|e| {
+                linkedin::errors::AppError::Browser(format!("Failed to create file: {e}"))
+            })?;
+            clap_mangen::Man::new(cmd).render(&mut file).map_err(|e| {
+                linkedin::errors::AppError::Browser(format!("Failed to render manpage: {e}"))
+            })?;
             println!("Manpage generated at: {}", file_path.display());
             return Ok(());
         }
-        Commands::Auth(AuthArgs { command: AuthCommands::Add { name, username, password, li_at, jsessionid } }) => {
+        Commands::Auth(AuthArgs {
+            command:
+                AuthCommands::Add {
+                    name,
+                    username,
+                    password,
+                    li_at,
+                    jsessionid,
+                },
+        }) => {
             let store = linkedin::infra::resolve_credential_store();
             let creds = linkedin::domain::ProfileCredentials {
                 username: username.clone(),
@@ -789,40 +806,69 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 "has_password": password.is_some(),
                 "has_cookies": li_at.is_some(),
             });
-            render_data(&res, format, &format!("Profile '{name}' credentials securely saved"))?;
+            render_data(
+                &res,
+                format,
+                &format!("Profile '{name}' credentials securely saved"),
+            )?;
             return Ok(());
         }
-        Commands::Auth(AuthArgs { command: AuthCommands::List }) => {
+        Commands::Auth(AuthArgs {
+            command: AuthCommands::List,
+        }) => {
             let store = linkedin::infra::resolve_credential_store();
             let profiles = store.list_profiles()?;
-            let mut summary = String::from("Configured Profiles:\nNAME\tACTIVE\tUSERNAME\tCOOKIES\tSTORAGE\n");
+            let mut summary =
+                String::from("Configured Profiles:\nNAME\tACTIVE\tUSERNAME\tCOOKIES\tSTORAGE\n");
             for p in &profiles {
                 let active_star = if p.is_active { "*" } else { " " };
                 summary.push_str(&format!(
                     "{}{} \t{}\t{}\t{}\t{}\n",
-                    active_star, p.name, p.is_active, p.has_username, p.has_cookies, p.user_data_dir
+                    active_star,
+                    p.name,
+                    p.is_active,
+                    p.has_username,
+                    p.has_cookies,
+                    p.user_data_dir
                 ));
             }
             render_data(&profiles, format, &summary)?;
             return Ok(());
         }
-        Commands::Auth(AuthArgs { command: AuthCommands::Switch { name } }) => {
+        Commands::Auth(AuthArgs {
+            command: AuthCommands::Switch { name },
+        }) => {
             let store = linkedin::infra::resolve_credential_store();
             store.set_active_profile(name)?;
             let res = serde_json::json!({ "status": "switched", "active_profile": name });
-            render_data(&res, format, &format!("Switched active profile to '{name}'"))?;
+            render_data(
+                &res,
+                format,
+                &format!("Switched active profile to '{name}'"),
+            )?;
             return Ok(());
         }
-        Commands::Auth(AuthArgs { command: AuthCommands::Remove { name } }) => {
+        Commands::Auth(AuthArgs {
+            command: AuthCommands::Remove { name },
+        }) => {
             let store = linkedin::infra::resolve_credential_store();
             let removed = store.delete_credentials(name)?;
             let res = serde_json::json!({ "status": if removed { "deleted" } else { "not_found" }, "profile": name });
-            render_data(&res, format, &format!("Removed profile '{name}' (existed: {removed})"))?;
+            render_data(
+                &res,
+                format,
+                &format!("Removed profile '{name}' (existed: {removed})"),
+            )?;
             return Ok(());
         }
         Commands::Session(SessionArgs { command }) => {
             match command {
-                SessionCommands::Open { name, port, host, headed } => {
+                SessionCommands::Open {
+                    name,
+                    port,
+                    host,
+                    headed,
+                } => {
                     if cli.dry_run {
                         let dry_run_action = DryRunAction {
                             resource: "session".to_string(),
@@ -848,7 +894,14 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                             "pid": active.pid,
                             "created_at": active.created_at,
                         });
-                        render_data(&res, format, &format!("Session '{name}' is already running at {} (PID: {})", active.endpoint, active.pid))?;
+                        render_data(
+                            &res,
+                            format,
+                            &format!(
+                                "Session '{name}' is already running at {} (PID: {})",
+                                active.endpoint, active.pid
+                            ),
+                        )?;
                         return Ok(());
                     }
 
@@ -866,7 +919,9 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                     let pid = std::process::id();
                     let _entry = linkedin::browser::write_session(name, &ws_url, pid)?;
 
-                    let _page = session.get_or_create_page("https://www.linkedin.com/feed/").await?;
+                    let _page = session
+                        .get_or_create_page("https://www.linkedin.com/feed/")
+                        .await?;
                     println!("{ws_url}");
                     eprintln!("Session '{name}' bound at {ws_url} (PID: {pid}). Press Ctrl+C to terminate.");
 
@@ -975,9 +1030,15 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 }
             }
         }
-        Commands::Post(PostArgs { command: PostCommands::Create { file, media, visibility } }) => {
-            let content = std::fs::read_to_string(file)
-                .map_err(linkedin::errors::AppError::Io)?;
+        Commands::Post(PostArgs {
+            command:
+                PostCommands::Create {
+                    file,
+                    media,
+                    visibility,
+                },
+        }) => {
+            let content = std::fs::read_to_string(file).map_err(linkedin::errors::AppError::Io)?;
             let parsed = linkedin::domain::parse_markdown_post(&content)?;
             let validation = linkedin::domain::validate_post_content(&parsed.body)?;
             let media_plan = media
@@ -1014,18 +1075,29 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
             }
             return Ok(());
         }
-        Commands::Message(MessageArgs { command: MessageCommands::SendBatch { template, recipients, attachment, max_batch, jitter_min, jitter_max } }) if cli.dry_run => {
+        Commands::Message(MessageArgs {
+            command:
+                MessageCommands::SendBatch {
+                    template,
+                    recipients,
+                    attachment,
+                    max_batch,
+                    jitter_min,
+                    jitter_max,
+                },
+        }) if cli.dry_run => {
             let template_str = if let Ok(content) = std::fs::read_to_string(template) {
                 content
             } else {
                 template.clone()
             };
-            let recips_str = std::fs::read_to_string(recipients)
-                .map_err(linkedin::errors::AppError::Io)?;
+            let recips_str =
+                std::fs::read_to_string(recipients).map_err(linkedin::errors::AppError::Io)?;
             let recipients_arr: Vec<serde_json::Value> = serde_json::from_str(&recips_str)?;
 
             linkedin::domain::validate_batch_limits(recipients_arr.len(), *max_batch)?;
-            let mut rendered = linkedin::domain::render_batch_templates(&template_str, &recipients_arr)?;
+            let mut rendered =
+                linkedin::domain::render_batch_templates(&template_str, &recipients_arr)?;
             if let Some(ref default_att) = attachment {
                 let default_str = default_att.to_string_lossy().to_string();
                 for msg in &mut rendered {
@@ -1057,7 +1129,9 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
             render_dry_run(dry_run_action, format)?;
             return Ok(());
         }
-        Commands::Post(PostArgs { command: PostCommands::Stats { urn } }) => {
+        Commands::Post(PostArgs {
+            command: PostCommands::Stats { urn },
+        }) => {
             // Simulated analytics payload for development/offline inspection
             let mock_raw = serde_json::json!({
                 "summary": {
@@ -1097,27 +1171,42 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
             }
             return Ok(());
         }
-        Commands::Post(PostArgs { command: PostCommands::Draft(ref command) })
+        Commands::Post(PostArgs {
+            command: PostCommands::Draft(ref command),
+        })
         | Commands::Draft(DraftArgs { ref command }) => {
             let store = linkedin::infra::SqliteDraftStore::open_default()?;
             let is_post = matches!(cli.command, Commands::Post(..));
             match command {
-                DraftCommands::Add { text, file, media, schedule } => {
+                DraftCommands::Add {
+                    text,
+                    file,
+                    media,
+                    schedule,
+                } => {
                     let content = if let Some(f) = file {
                         std::fs::read_to_string(f).map_err(linkedin::errors::AppError::Io)?
                     } else if let Some(t) = text {
                         t.clone()
                     } else {
                         return Err(linkedin::errors::AppError::InvalidInput(
-                            "Must specify either --text or --file for draft".to_string()
+                            "Must specify either --text or --file for draft".to_string(),
                         ));
                     };
                     let media_str = media.as_ref().map(|p| p.to_string_lossy().to_string());
 
                     if cli.dry_run {
                         let dry_run_action = DryRunAction {
-                            resource: if is_post { "post".to_string() } else { "draft".to_string() },
-                            action: if is_post { "draft_add".to_string() } else { "add".to_string() },
+                            resource: if is_post {
+                                "post".to_string()
+                            } else {
+                                "draft".to_string()
+                            },
+                            action: if is_post {
+                                "draft_add".to_string()
+                            } else {
+                                "add".to_string()
+                            },
                             target: None,
                             parameters: serde_json::json!({
                                 "text_length": content.len(),
@@ -1129,7 +1218,11 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                         render_dry_run(dry_run_action, format)?;
                     } else {
                         use linkedin::infra::DraftStore;
-                        let draft = store.create_draft(&content, media_str.as_deref(), schedule.as_deref())?;
+                        let draft = store.create_draft(
+                            &content,
+                            media_str.as_deref(),
+                            schedule.as_deref(),
+                        )?;
                         let summary = format!(
                             "Draft created successfully: {}\nState: {}\nScheduled: {}\nContent Preview: {}",
                             draft.id, draft.state.as_str(),
@@ -1141,28 +1234,36 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 }
                 DraftCommands::List { status } => {
                     use linkedin::infra::DraftStore;
-                    let filter_state = status.as_deref().and_then(linkedin::domain::DraftState::from_str_loose);
+                    let filter_state = status
+                        .as_deref()
+                        .and_then(linkedin::domain::DraftState::from_str_loose);
                     let drafts = store.list_drafts(filter_state)?;
                     let summary = format!("Found {} drafts", drafts.len());
                     render_data(&drafts, format, &summary)?;
                 }
-                DraftCommands::Export { id, format: export_format } => {
+                DraftCommands::Export {
+                    id,
+                    format: export_format,
+                } => {
                     use linkedin::infra::DraftStore;
                     let draft = if cli.dry_run {
-                        store.get_draft(id)?.unwrap_or_else(|| linkedin::domain::Draft {
-                            id: id.clone(),
-                            text: "Dry-run draft post content".to_string(),
-                            media_path: None,
-                            scheduled_at: Some("2026-09-07T12:00:00Z".to_string()),
-                            state: linkedin::domain::DraftState::Scheduled,
-                            post_urn: None,
-                            error_message: None,
-                            created_at: "2026-09-06T20:00:00Z".to_string(),
-                            updated_at: "2026-09-06T20:00:00Z".to_string(),
-                        })
+                        store
+                            .get_draft(id)?
+                            .unwrap_or_else(|| linkedin::domain::Draft {
+                                id: id.clone(),
+                                text: "Dry-run draft post content".to_string(),
+                                media_path: None,
+                                scheduled_at: Some("2026-09-07T12:00:00Z".to_string()),
+                                state: linkedin::domain::DraftState::Scheduled,
+                                post_urn: None,
+                                error_message: None,
+                                created_at: "2026-09-06T20:00:00Z".to_string(),
+                                updated_at: "2026-09-06T20:00:00Z".to_string(),
+                            })
                     } else {
-                        store.get_draft(id)?
-                            .ok_or_else(|| linkedin::errors::AppError::NotFound(format!("Draft '{id}' not found")))?
+                        store.get_draft(id)?.ok_or_else(|| {
+                            linkedin::errors::AppError::NotFound(format!("Draft '{id}' not found"))
+                        })?
                     };
 
                     let output_text = match export_format.to_lowercase().as_str() {
@@ -1172,13 +1273,25 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                             let timer = linkedin::domain::generate_systemd_timer(&draft)?;
                             format!("--- linkedin-post-{id}.service ---\n{service}\n--- linkedin-post-{id}.timer ---\n{timer}")
                         }
-                        other => return Err(linkedin::errors::AppError::InvalidInput(format!("Unknown export format: '{other}'. Choose 'cron' or 'systemd'"))),
+                        other => {
+                            return Err(linkedin::errors::AppError::InvalidInput(format!(
+                                "Unknown export format: '{other}'. Choose 'cron' or 'systemd'"
+                            )))
+                        }
                     };
 
                     if cli.dry_run {
                         let dry_run_action = DryRunAction {
-                            resource: if is_post { "post".to_string() } else { "draft".to_string() },
-                            action: if is_post { "draft_export".to_string() } else { "export".to_string() },
+                            resource: if is_post {
+                                "post".to_string()
+                            } else {
+                                "draft".to_string()
+                            },
+                            action: if is_post {
+                                "draft_export".to_string()
+                            } else {
+                                "export".to_string()
+                            },
                             target: Some(id.clone()),
                             parameters: serde_json::json!({ "format": export_format, "output": output_text }),
                             dry_run: true,
@@ -1226,7 +1339,9 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
     // 2. Intercept dry-run commands with zero network side effects
     if cli.dry_run {
         let dry_run_action = match &cli.command {
-            Commands::Connection(ConnectionArgs { command: ConnectionCommands::Request { handle, note } })
+            Commands::Connection(ConnectionArgs {
+                command: ConnectionCommands::Request { handle, note },
+            })
             | Commands::Connect { handle, note } => DryRunAction {
                 resource: "connection".to_string(),
                 action: "request".to_string(),
@@ -1239,11 +1354,12 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 dry_run: true,
             },
             Commands::Message(MessageArgs {
-                command: MessageCommands::Send {
-                    handle,
-                    text,
-                    attachment,
-                },
+                command:
+                    MessageCommands::Send {
+                        handle,
+                        text,
+                        attachment,
+                    },
             }) => DryRunAction {
                 resource: "message".to_string(),
                 action: "send".to_string(),
@@ -1256,31 +1372,48 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 }),
                 dry_run: true,
             },
-            Commands::Invite(InviteArgs { command: InviteCommands::Accept { handle } })
-            | Commands::Invites(LegacyInvitesArgs { accept: Some(handle), .. }) => DryRunAction {
+            Commands::Invite(InviteArgs {
+                command: InviteCommands::Accept { handle },
+            })
+            | Commands::Invites(LegacyInvitesArgs {
+                accept: Some(handle),
+                ..
+            }) => DryRunAction {
                 resource: "invite".to_string(),
                 action: "accept".to_string(),
                 target: Some(handle.clone()),
                 parameters: serde_json::json!({ "action": "accept_invitation" }),
                 dry_run: true,
             },
-            Commands::Invite(InviteArgs { command: InviteCommands::Withdraw { handle } })
-            | Commands::Invites(LegacyInvitesArgs { withdraw: Some(handle), .. }) => DryRunAction {
+            Commands::Invite(InviteArgs {
+                command: InviteCommands::Withdraw { handle },
+            })
+            | Commands::Invites(LegacyInvitesArgs {
+                withdraw: Some(handle),
+                ..
+            }) => DryRunAction {
                 resource: "invite".to_string(),
                 action: "withdraw".to_string(),
                 target: Some(handle.clone()),
                 parameters: serde_json::json!({ "action": "withdraw_invitation" }),
                 dry_run: true,
             },
-            Commands::Invite(InviteArgs { command: InviteCommands::Ignore { handle } })
-            | Commands::Invites(LegacyInvitesArgs { ignore: Some(handle), .. }) => DryRunAction {
+            Commands::Invite(InviteArgs {
+                command: InviteCommands::Ignore { handle },
+            })
+            | Commands::Invites(LegacyInvitesArgs {
+                ignore: Some(handle),
+                ..
+            }) => DryRunAction {
                 resource: "invite".to_string(),
                 action: "ignore".to_string(),
                 target: Some(handle.clone()),
                 parameters: serde_json::json!({ "action": "ignore_invitation" }),
                 dry_run: true,
             },
-            Commands::Search(SearchArgs { command: SearchCommands::People { keywords, .. } }) => {
+            Commands::Search(SearchArgs {
+                command: SearchCommands::People { keywords, .. },
+            }) => {
                 let mock_snippets = vec![
                     linkedin::domain::ProfileSnippet {
                         public_identifier: "alice-engineer".to_string(),
@@ -1313,11 +1446,17 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                         network: vec![],
                         profiles: mock_snippets,
                     };
-                    render_data(&results, format, &format!("[DRY-RUN] Search results for '{keywords}'"))?;
+                    render_data(
+                        &results,
+                        format,
+                        &format!("[DRY-RUN] Search results for '{keywords}'"),
+                    )?;
                 }
                 return Ok(());
             }
-            Commands::Feed(FeedArgs { command: FeedCommands::List { limit, sort } }) => {
+            Commands::Feed(FeedArgs {
+                command: FeedCommands::List { limit, sort },
+            }) => {
                 let sort_enum = sort.parse::<FeedSort>().unwrap_or_default();
                 let mock_posts = vec![
                     TimelinePost {
@@ -1325,7 +1464,9 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                         author_name: "Tech Lead".to_string(),
                         author_handle: Some("tech-lead-sample".to_string()),
                         author_headline: Some("Building resilient systems".to_string()),
-                        text: "Excited to share our latest milestone with the open-source community!".to_string(),
+                        text:
+                            "Excited to share our latest milestone with the open-source community!"
+                                .to_string(),
                         created_at: Some("2h".to_string()),
                         reaction_count: 42,
                         comment_count: 5,
@@ -1338,7 +1479,8 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                         author_name: "Staff Engineer".to_string(),
                         author_handle: Some("staff-engineer-sample".to_string()),
                         author_headline: Some("Distributed Systems & Rust".to_string()),
-                        text: "Why deterministic testing matters for mission-critical software.".to_string(),
+                        text: "Why deterministic testing matters for mission-critical software."
+                            .to_string(),
                         created_at: Some("5h".to_string()),
                         reaction_count: 128,
                         comment_count: 19,
@@ -1357,26 +1499,30 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                         posts,
                         sort: sort_enum,
                     };
-                    render_data(&results, format, &format!("[DRY-RUN] Home Feed (sorted by {sort})"))?;
+                    render_data(
+                        &results,
+                        format,
+                        &format!("[DRY-RUN] Home Feed (sorted by {sort})"),
+                    )?;
                 }
                 return Ok(());
             }
-            Commands::Feed(FeedArgs { command: FeedCommands::Member { handle, limit } }) => {
-                let mock_posts = vec![
-                    TimelinePost {
-                        urn: "urn:li:activity:7100000000000000003".to_string(),
-                        author_name: handle.clone(),
-                        author_handle: Some(handle.clone()),
-                        author_headline: Some("Software Architect".to_string()),
-                        text: format!("Recent post by {handle}"),
-                        created_at: Some("1d".to_string()),
-                        reaction_count: 15,
-                        comment_count: 2,
-                        repost_count: 0,
-                        my_reaction: None,
-                        media_urls: vec![],
-                    },
-                ];
+            Commands::Feed(FeedArgs {
+                command: FeedCommands::Member { handle, limit },
+            }) => {
+                let mock_posts = vec![TimelinePost {
+                    urn: "urn:li:activity:7100000000000000003".to_string(),
+                    author_name: handle.clone(),
+                    author_handle: Some(handle.clone()),
+                    author_headline: Some("Software Architect".to_string()),
+                    text: format!("Recent post by {handle}"),
+                    created_at: Some("1d".to_string()),
+                    reaction_count: 15,
+                    comment_count: 2,
+                    repost_count: 0,
+                    my_reaction: None,
+                    media_urls: vec![],
+                }];
                 let mut posts = mock_posts;
                 posts.truncate(*limit);
                 if format == OutputFormat::Ndjson {
@@ -1387,11 +1533,17 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                         posts,
                         sort: FeedSort::Recent,
                     };
-                    render_data(&results, format, &format!("[DRY-RUN] Activity feed for {handle}"))?;
+                    render_data(
+                        &results,
+                        format,
+                        &format!("[DRY-RUN] Activity feed for {handle}"),
+                    )?;
                 }
                 return Ok(());
             }
-            Commands::Feed(FeedArgs { command: FeedCommands::Get { urn } }) => {
+            Commands::Feed(FeedArgs {
+                command: FeedCommands::Get { urn },
+            }) => {
                 let mock_post = TimelinePost {
                     urn: urn.clone(),
                     author_name: "Sample Author".to_string(),
@@ -1405,19 +1557,23 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                     my_reaction: None,
                     media_urls: vec![],
                 };
-                render_data(&mock_post, format, &format!("[DRY-RUN] Post details for {urn}"))?;
+                render_data(
+                    &mock_post,
+                    format,
+                    &format!("[DRY-RUN] Post details for {urn}"),
+                )?;
                 return Ok(());
             }
-            Commands::Feed(FeedArgs { command: FeedCommands::Comments { urn, limit } }) => {
-                let mock_comments = vec![
-                    linkedin::domain::PostComment {
-                        urn: "urn:li:comment:1".to_string(),
-                        author_name: "Alice Reviewer".to_string(),
-                        author_handle: Some("alice-reviewer".to_string()),
-                        text: "Great post, thanks for sharing!".to_string(),
-                        created_at: Some("1h".to_string()),
-                    },
-                ];
+            Commands::Feed(FeedArgs {
+                command: FeedCommands::Comments { urn, limit },
+            }) => {
+                let mock_comments = vec![linkedin::domain::PostComment {
+                    urn: "urn:li:comment:1".to_string(),
+                    author_name: "Alice Reviewer".to_string(),
+                    author_handle: Some("alice-reviewer".to_string()),
+                    text: "Great post, thanks for sharing!".to_string(),
+                    created_at: Some("1h".to_string()),
+                }];
                 let mut comments = mock_comments;
                 comments.truncate(*limit);
                 if format == OutputFormat::Ndjson {
@@ -1427,7 +1583,9 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 }
                 return Ok(());
             }
-            Commands::Feed(FeedArgs { command: FeedCommands::React { urn, r#type } }) => {
+            Commands::Feed(FeedArgs {
+                command: FeedCommands::React { urn, r#type },
+            }) => {
                 let reaction = r#type.parse::<ReactionType>()?;
                 DryRunAction {
                     resource: "feed".to_string(),
@@ -1441,7 +1599,9 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                     dry_run: true,
                 }
             }
-            Commands::Feed(FeedArgs { command: FeedCommands::Unreact { urn } }) => DryRunAction {
+            Commands::Feed(FeedArgs {
+                command: FeedCommands::Unreact { urn },
+            }) => DryRunAction {
                 resource: "feed".to_string(),
                 action: "unreact".to_string(),
                 target: Some(urn.clone()),
@@ -1451,7 +1611,9 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 }),
                 dry_run: true,
             },
-            Commands::Feed(FeedArgs { command: FeedCommands::Comment { urn, text } }) => {
+            Commands::Feed(FeedArgs {
+                command: FeedCommands::Comment { urn, text },
+            }) => {
                 linkedin::domain::validate_comment_content(text)?;
                 DryRunAction {
                     resource: "feed".to_string(),
@@ -1466,7 +1628,9 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                     dry_run: true,
                 }
             }
-            Commands::Feed(FeedArgs { command: FeedCommands::Repost { urn, note } }) => DryRunAction {
+            Commands::Feed(FeedArgs {
+                command: FeedCommands::Repost { urn, note },
+            }) => DryRunAction {
                 resource: "feed".to_string(),
                 action: "repost".to_string(),
                 target: Some(urn.clone()),
@@ -1477,7 +1641,19 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 }),
                 dry_run: true,
             },
-            Commands::Jobs(JobsArgs { command: JobsCommands::Search { keywords, location, workplace, posted, experience, easy_apply, limit, page } }) => {
+            Commands::Jobs(JobsArgs {
+                command:
+                    JobsCommands::Search {
+                        keywords,
+                        location,
+                        workplace,
+                        posted,
+                        experience,
+                        easy_apply,
+                        limit,
+                        page,
+                    },
+            }) => {
                 let mut wp_enums = Vec::new();
                 for w in workplace {
                     wp_enums.push(w.parse::<WorkplaceType>()?);
@@ -1542,11 +1718,17 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                         page: *page,
                         query: keywords.clone(),
                     };
-                    render_data(&result, format, &format!("[DRY-RUN] Job search URL: {}", filter.build_url()))?;
+                    render_data(
+                        &result,
+                        format,
+                        &format!("[DRY-RUN] Job search URL: {}", filter.build_url()),
+                    )?;
                 }
                 return Ok(());
             }
-            Commands::Jobs(JobsArgs { command: JobsCommands::Get { id } }) => {
+            Commands::Jobs(JobsArgs {
+                command: JobsCommands::Get { id },
+            }) => {
                 let norm_id = ChromiumJobService::normalize_job_id(id);
                 let mock_details = JobDetails {
                     id: norm_id.clone(),
@@ -1575,10 +1757,16 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                     description_markdown: "### About the Role\nWe are looking for an experienced systems engineer to scale AI agent infrastructure.".to_string(),
                     job_url: format!("https://www.linkedin.com/jobs/view/{norm_id}/"),
                 };
-                render_data(&mock_details, format, &format!("[DRY-RUN] Job details for {norm_id}"))?;
+                render_data(
+                    &mock_details,
+                    format,
+                    &format!("[DRY-RUN] Job details for {norm_id}"),
+                )?;
                 return Ok(());
             }
-            Commands::Jobs(JobsArgs { command: JobsCommands::Save { id } }) => {
+            Commands::Jobs(JobsArgs {
+                command: JobsCommands::Save { id },
+            }) => {
                 let norm_id = ChromiumJobService::normalize_job_id(id);
                 DryRunAction {
                     resource: "jobs".to_string(),
@@ -1591,7 +1779,9 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                     dry_run: true,
                 }
             }
-            Commands::Jobs(JobsArgs { command: JobsCommands::Unsave { id } }) => {
+            Commands::Jobs(JobsArgs {
+                command: JobsCommands::Unsave { id },
+            }) => {
                 let norm_id = ChromiumJobService::normalize_job_id(id);
                 DryRunAction {
                     resource: "jobs".to_string(),
@@ -1604,21 +1794,21 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                     dry_run: true,
                 }
             }
-            Commands::Jobs(JobsArgs { command: JobsCommands::Saved { limit } }) => {
-                let mock_saved = vec![
-                    JobSummary {
-                        id: "4100000001".to_string(),
-                        urn: "urn:li:jobPosting:4100000001".to_string(),
-                        title: "Staff AI Systems Engineer".to_string(),
-                        company_name: "Anthropic".to_string(),
-                        company_handle: Some("anthropic-ai".to_string()),
-                        location: "San Francisco, CA (Hybrid)".to_string(),
-                        workplace_type: Some("Hybrid".to_string()),
-                        posted_at: Some("Saved 2d ago".to_string()),
-                        is_easy_apply: true,
-                        job_url: "https://www.linkedin.com/jobs/view/4100000001/".to_string(),
-                    },
-                ];
+            Commands::Jobs(JobsArgs {
+                command: JobsCommands::Saved { limit },
+            }) => {
+                let mock_saved = vec![JobSummary {
+                    id: "4100000001".to_string(),
+                    urn: "urn:li:jobPosting:4100000001".to_string(),
+                    title: "Staff AI Systems Engineer".to_string(),
+                    company_name: "Anthropic".to_string(),
+                    company_handle: Some("anthropic-ai".to_string()),
+                    location: "San Francisco, CA (Hybrid)".to_string(),
+                    workplace_type: Some("Hybrid".to_string()),
+                    posted_at: Some("Saved 2d ago".to_string()),
+                    is_easy_apply: true,
+                    job_url: "https://www.linkedin.com/jobs/view/4100000001/".to_string(),
+                }];
                 let mut saved = mock_saved;
                 saved.truncate(*limit);
                 if format == OutputFormat::Ndjson {
@@ -1654,21 +1844,42 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
 
     let session = BrowserSession::launch(&browser_config).await?;
     let target_url = match &cli.command {
-        Commands::Message(..) | Commands::Inbox(..) | Commands::Thread { .. } => "https://www.linkedin.com/messaging/".to_string(),
+        Commands::Message(..) | Commands::Inbox(..) | Commands::Thread { .. } => {
+            "https://www.linkedin.com/messaging/".to_string()
+        }
         Commands::Search(..) => "https://www.linkedin.com/search/".to_string(),
-        Commands::Connection(ConnectionArgs { command: ConnectionCommands::Request { handle, .. } })
+        Commands::Connection(ConnectionArgs {
+            command: ConnectionCommands::Request { handle, .. },
+        })
         | Commands::Connect { handle, .. } => format!("https://www.linkedin.com/in/{handle}/"),
-        Commands::Profile(ProfileArgs { command: ProfileCommands::Get { handle, .. } | ProfileCommands::Contact { handle, .. } | ProfileCommands::Status { handle } })
+        Commands::Profile(ProfileArgs {
+            command:
+                ProfileCommands::Get { handle, .. }
+                | ProfileCommands::Contact { handle, .. }
+                | ProfileCommands::Status { handle },
+        })
         | Commands::ContactInfo { handle, .. } => format!("https://www.linkedin.com/in/{handle}/"),
-        Commands::Jobs(JobsArgs { command: JobsCommands::Get { id } })
-        | Commands::Jobs(JobsArgs { command: JobsCommands::Save { id } })
-        | Commands::Jobs(JobsArgs { command: JobsCommands::Unsave { id } }) => {
+        Commands::Jobs(JobsArgs {
+            command: JobsCommands::Get { id },
+        })
+        | Commands::Jobs(JobsArgs {
+            command: JobsCommands::Save { id },
+        })
+        | Commands::Jobs(JobsArgs {
+            command: JobsCommands::Unsave { id },
+        }) => {
             let norm_id = ChromiumJobService::normalize_job_id(id);
             format!("https://www.linkedin.com/jobs/view/{norm_id}/")
         }
-        Commands::Jobs(JobsArgs { command: JobsCommands::Search { .. } }) => "https://www.linkedin.com/jobs/search/".to_string(),
-        Commands::Jobs(JobsArgs { command: JobsCommands::Saved { .. } }) => "https://www.linkedin.com/my-items/saved-jobs/".to_string(),
-        Commands::Debug(DebugArgs { command: DebugCommands::Eval { url: Some(u), .. } }) => u.clone(),
+        Commands::Jobs(JobsArgs {
+            command: JobsCommands::Search { .. },
+        }) => "https://www.linkedin.com/jobs/search/".to_string(),
+        Commands::Jobs(JobsArgs {
+            command: JobsCommands::Saved { .. },
+        }) => "https://www.linkedin.com/my-items/saved-jobs/".to_string(),
+        Commands::Debug(DebugArgs {
+            command: DebugCommands::Eval { url: Some(u), .. },
+        }) => u.clone(),
         _ => "https://www.linkedin.com/feed/".to_string(),
     };
     let page = session.get_or_create_page(&target_url).await?;
@@ -1679,42 +1890,42 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
     // Inject session cookies from credential store if available (only for local managed browsers)
     if !session.is_remote() {
         if let Some(creds) = &stored_creds {
-        use chromiumoxide::cdp::browser_protocol::network::CookieParam;
-        let mut cookies_to_inject = Vec::new();
-        if let Some(li_at) = &creds.li_at {
-            if let Ok(param) = CookieParam::builder()
-                .name("li_at")
-                .value(li_at)
-                .domain(".linkedin.com")
-                .path("/")
-                .secure(true)
-                .http_only(true)
-                .build()
-            {
-                cookies_to_inject.push(param);
+            use chromiumoxide::cdp::browser_protocol::network::CookieParam;
+            let mut cookies_to_inject = Vec::new();
+            if let Some(li_at) = &creds.li_at {
+                if let Ok(param) = CookieParam::builder()
+                    .name("li_at")
+                    .value(li_at)
+                    .domain(".linkedin.com")
+                    .path("/")
+                    .secure(true)
+                    .http_only(true)
+                    .build()
+                {
+                    cookies_to_inject.push(param);
+                }
             }
-        }
-        if let Some(jsessionid) = &creds.jsessionid {
-            let val = if jsessionid.starts_with('"') {
-                jsessionid.clone()
-            } else {
-                format!("\"{jsessionid}\"")
-            };
-            if let Ok(param) = CookieParam::builder()
-                .name("JSESSIONID")
-                .value(val)
-                .domain(".linkedin.com")
-                .path("/")
-                .secure(true)
-                .http_only(false)
-                .build()
-            {
-                cookies_to_inject.push(param);
+            if let Some(jsessionid) = &creds.jsessionid {
+                let val = if jsessionid.starts_with('"') {
+                    jsessionid.clone()
+                } else {
+                    format!("\"{jsessionid}\"")
+                };
+                if let Ok(param) = CookieParam::builder()
+                    .name("JSESSIONID")
+                    .value(val)
+                    .domain(".linkedin.com")
+                    .path("/")
+                    .secure(true)
+                    .http_only(false)
+                    .build()
+                {
+                    cookies_to_inject.push(param);
+                }
             }
-        }
-        if !cookies_to_inject.is_empty() {
-            let _ = page.set_cookies(cookies_to_inject).await;
-        }
+            if !cookies_to_inject.is_empty() {
+                let _ = page.set_cookies(cookies_to_inject).await;
+            }
         }
     }
 
@@ -1724,14 +1935,25 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
     // Auth status (without handle) and Login
     let requires_session = !matches!(
         &cli.command,
-        Commands::Auth(AuthArgs { command: AuthCommands::Status { handle: None } })
-            | Commands::Status { handle: None }
-            | Commands::Auth(AuthArgs { command: AuthCommands::Login })
+        Commands::Auth(AuthArgs {
+            command: AuthCommands::Status { handle: None }
+        }) | Commands::Status { handle: None }
+            | Commands::Auth(AuthArgs {
+                command: AuthCommands::Login
+            })
             | Commands::Login
     );
 
     if requires_session {
-        ensure_authenticated_session(&page, &rule, store.as_ref(), &cli.session, &stored_creds, session.is_remote()).await?;
+        ensure_authenticated_session(
+            &page,
+            &rule,
+            store.as_ref(),
+            &cli.session,
+            &stored_creds,
+            session.is_remote(),
+        )
+        .await?;
     }
 
     // 4. Command dispatch to domain traits with infra implementations
@@ -1874,7 +2096,7 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
         | Commands::Connect { handle, note } => {
             let conn_mgr = ChromiumConnectionManager::new(page.clone(), rule);
             let status_res = conn_mgr.send_connection_request(&handle, note.as_deref()).await;
-            
+
             // Clean up profile page tab to avoid accumulating tabs across repeated connection dispatches
             let _ = session.close_page(&page).await;
 
@@ -2372,8 +2594,8 @@ async fn ensure_authenticated_session(
     stored_creds: &Option<linkedin::domain::ProfileCredentials>,
     is_remote: bool,
 ) -> Result<(), linkedin::errors::AppError> {
-    use linkedin::domain::AuthStatus;
     use linkedin::domain::traits::LinkedInDriver;
+    use linkedin::domain::AuthStatus;
     use linkedin::errors::AppError;
     use linkedin::infra::ChromiumLinkedInDriver;
 
@@ -2381,7 +2603,9 @@ async fn ensure_authenticated_session(
     let status = driver.check_auth_status().await?;
 
     match status {
-        AuthStatus::Authenticated { ref account_name, .. } => {
+        AuthStatus::Authenticated {
+            ref account_name, ..
+        } => {
             tracing::debug!(
                 target: "auth",
                 "Authenticated session active: {}",
@@ -2493,7 +2717,10 @@ async fn persist_session_cookies(
     }
 }
 
-fn format_invitations_summary(invites: &[linkedin::domain::models::Invitation], label: &str) -> String {
+fn format_invitations_summary(
+    invites: &[linkedin::domain::models::Invitation],
+    label: &str,
+) -> String {
     if invites.is_empty() {
         return format!("No {label} invitations found.");
     }
@@ -2501,7 +2728,10 @@ fn format_invitations_summary(invites: &[linkedin::domain::models::Invitation], 
     for inv in invites {
         let name = inv.name.as_deref().unwrap_or(&inv.public_identifier);
         let headline = inv.headline.as_deref().unwrap_or("No headline");
-        summary.push_str(&format!("• {} ({}) - {}\n", name, inv.public_identifier, headline));
+        summary.push_str(&format!(
+            "• {} ({}) - {}\n",
+            name, inv.public_identifier, headline
+        ));
         if let Some(ref time) = inv.sent_or_received_at {
             summary.push_str(&format!("  Time: {}\n", time));
         }

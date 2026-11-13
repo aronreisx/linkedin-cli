@@ -1,5 +1,5 @@
-use rand::Rng;
 use crate::domain::models::InteractionRule;
+use rand::Rng;
 
 pub async fn human_jitter(rule: &InteractionRule) {
     let min = rule.min_delay_ms;

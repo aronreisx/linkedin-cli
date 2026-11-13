@@ -143,7 +143,11 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
         }
     }
 
-    async fn authenticate(&self, username: Option<&str>, password: Option<&str>) -> Result<SelfProfile, AppError> {
+    async fn authenticate(
+        &self,
+        username: Option<&str>,
+        password: Option<&str>,
+    ) -> Result<SelfProfile, AppError> {
         human_jitter(&self.rule).await;
         let current_url = self.page_url().await.unwrap_or_default();
         let state = classify_page_url(&current_url);
@@ -156,22 +160,29 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
             }
 
             let u = username.ok_or_else(|| {
-                AppError::Authentication("No LinkedIn username provided or found in environment (LINKEDIN_USERNAME)".to_string())
+                AppError::Authentication(
+                    "No LinkedIn username provided or found in environment (LINKEDIN_USERNAME)"
+                        .to_string(),
+                )
             })?;
             let p = password.ok_or_else(|| {
-                AppError::Authentication("No LinkedIn password provided or found in environment (LINKEDIN_PASSWORD)".to_string())
+                AppError::Authentication(
+                    "No LinkedIn password provided or found in environment (LINKEDIN_PASSWORD)"
+                        .to_string(),
+                )
             })?;
 
             info!(target: "driver", "Filling login credentials with human typing pacing for {u}...");
 
             let args_json = serde_json::to_string(&json!([u, p])).map_err(AppError::Json)?;
-            let js_fill = format!(r#"
+            let js_fill = format!(
+                r#"
                 (async ([username, password]) => {{
                     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
                     const randomBetween = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
                     // 1. Dismiss cookie consent banner if present
-                    const cookieBtn = document.querySelector('button[action-type="ACCEPT"]') 
+                    const cookieBtn = document.querySelector('button[action-type="ACCEPT"]')
                         || document.querySelector('.cookie-banner__accept-btn')
                         || document.querySelector('#artdeco-global-alert-container button')
                         || document.querySelector('button[id*="onetrust-accept"]');
@@ -210,7 +221,7 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
 
                     // 3. Human-like character-by-character typing simulation
                     const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-                    
+
                     const typeHuman = async (input, text) => {{
                         input.focus();
                         input.dispatchEvent(new Event('focus', {{ bubbles: true }}));
@@ -274,7 +285,8 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
                     submitBtn.click();
                     return true;
                 }})({args_json})
-            "#);
+            "#
+            );
 
             // Wait up to 15 seconds for login DOM inputs to render
             let start = std::time::Instant::now();
@@ -305,7 +317,9 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
             if !filled {
                 let final_url = self.page_url().await.unwrap_or_default();
                 return Err(AppError::ElementNotFound {
-                    selector: format!("Visible login inputs (email/password/submit) on {final_url}"),
+                    selector: format!(
+                        "Visible login inputs (email/password/submit) on {final_url}"
+                    ),
                 });
             }
 
@@ -369,7 +383,10 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
                     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                     let u = self.page_url().await.unwrap_or_default();
                     let st = classify_page_url(&u);
-                    if st == PageState::Feed || st == PageState::Profile || (st != PageState::Checkpoint && st != PageState::Login) {
+                    if st == PageState::Feed
+                        || st == PageState::Profile
+                        || (st != PageState::Checkpoint && st != PageState::Login)
+                    {
                         info!(target: "driver", "Two-factor authentication cleared! Redirected to {u}");
                         cleared = true;
                         break;
@@ -448,8 +465,14 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
         if let Ok(eval_val) = self.page.evaluate(dom_js).await {
             if let Ok(val) = eval_val.into_value::<Value>() {
                 if let Some(pid) = val.get("public_identifier").and_then(|p| p.as_str()) {
-                    let fn_opt = val.get("full_name").and_then(|f| f.as_str()).map(|s| s.to_string());
-                    let urn_opt = val.get("urn").and_then(|u| u.as_str()).map(|s| s.to_string());
+                    let fn_opt = val
+                        .get("full_name")
+                        .and_then(|f| f.as_str())
+                        .map(|s| s.to_string());
+                    let urn_opt = val
+                        .get("urn")
+                        .and_then(|u| u.as_str())
+                        .map(|s| s.to_string());
                     info!(target: "driver", "Extracted authenticated identity from DOM: pid={pid}, name={:?}", fn_opt);
                     return Ok(SelfProfile {
                         public_identifier: Some(pid.to_string()),
@@ -481,15 +504,28 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
 
                     if let Some(included) = json_val.get("included").and_then(|i| i.as_array()) {
                         for entity in included {
-                            if entity.get("$type").and_then(|t| t.as_str()).map(|s| s.contains("Profile")).unwrap_or(false) {
-                                if let Some(pid) = entity.get("publicIdentifier").and_then(|p| p.as_str()) {
+                            if entity
+                                .get("$type")
+                                .and_then(|t| t.as_str())
+                                .map(|s| s.contains("Profile"))
+                                .unwrap_or(false)
+                            {
+                                if let Some(pid) =
+                                    entity.get("publicIdentifier").and_then(|p| p.as_str())
+                                {
                                     public_identifier = Some(pid.to_string());
                                 }
                                 if let Some(u) = entity.get("entityUrn").and_then(|u| u.as_str()) {
                                     urn = Some(u.to_string());
                                 }
-                                let first = entity.get("firstName").and_then(|f| f.as_str()).unwrap_or("");
-                                let last = entity.get("lastName").and_then(|l| l.as_str()).unwrap_or("");
+                                let first = entity
+                                    .get("firstName")
+                                    .and_then(|f| f.as_str())
+                                    .unwrap_or("");
+                                let last = entity
+                                    .get("lastName")
+                                    .and_then(|l| l.as_str())
+                                    .unwrap_or("");
                                 if !first.is_empty() || !last.is_empty() {
                                     full_name = Some(format!("{first} {last}").trim().to_string());
                                 }
@@ -499,10 +535,17 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
                     }
 
                     if public_identifier.is_none() {
-                        if let Some(elements) = json_val.get("elements").and_then(|e| e.as_array()) {
+                        if let Some(elements) = json_val.get("elements").and_then(|e| e.as_array())
+                        {
                             if let Some(first) = elements.first() {
-                                public_identifier = first.get("publicIdentifier").and_then(|p| p.as_str()).map(|s| s.to_string());
-                                urn = first.get("entityUrn").and_then(|u| u.as_str()).map(|s| s.to_string());
+                                public_identifier = first
+                                    .get("publicIdentifier")
+                                    .and_then(|p| p.as_str())
+                                    .map(|s| s.to_string());
+                                urn = first
+                                    .get("entityUrn")
+                                    .and_then(|u| u.as_str())
+                                    .map(|s| s.to_string());
                             }
                         }
                     }
@@ -563,8 +606,14 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
         if let Ok(eval_val) = self.page.evaluate(dom_js).await {
             if let Ok(val) = eval_val.into_value::<Value>() {
                 if let Some(pid) = val.get("public_identifier").and_then(|p| p.as_str()) {
-                    let fn_opt = val.get("full_name").and_then(|f| f.as_str()).map(|s| s.to_string());
-                    let urn_opt = val.get("urn").and_then(|u| u.as_str()).map(|s| s.to_string());
+                    let fn_opt = val
+                        .get("full_name")
+                        .and_then(|f| f.as_str())
+                        .map(|s| s.to_string());
+                    let urn_opt = val
+                        .get("urn")
+                        .and_then(|u| u.as_str())
+                        .map(|s| s.to_string());
                     info!(target: "driver", "Extracted authenticated identity from DOM fallback: pid={pid}, name={:?}", fn_opt);
                     return Ok(SelfProfile {
                         public_identifier: Some(pid.to_string()),
@@ -579,7 +628,9 @@ impl LinkedInDriver for ChromiumLinkedInDriver {
             return Err(e);
         }
 
-        Err(AppError::Authentication("Could not fetch own profile".to_string()))
+        Err(AppError::Authentication(
+            "Could not fetch own profile".to_string(),
+        ))
     }
 
     async fn navigate_to(&self, url: &str) -> Result<(), AppError> {

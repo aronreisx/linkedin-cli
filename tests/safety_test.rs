@@ -66,14 +66,26 @@ fn test_stealth_js_payload_integrity() {
 fn test_challenge_url_pattern_matching() {
     use linkedin::infra::tripwire::is_challenge_url;
 
-    assert!(is_challenge_url("https://www.linkedin.com/checkpoint/challenge/12345"));
-    assert!(is_challenge_url("https://www.linkedin.com/uas/consumer-captcha/challenge"));
-    assert!(is_challenge_url("https://www.linkedin.com/security-check/verify"));
-    assert!(is_challenge_url("https://www.linkedin.com/feed/checkpoint?src=bot"));
-    assert!(is_challenge_url("https://www.linkedin.com/uas/login/challenge?sub=pin"));
+    assert!(is_challenge_url(
+        "https://www.linkedin.com/checkpoint/challenge/12345"
+    ));
+    assert!(is_challenge_url(
+        "https://www.linkedin.com/uas/consumer-captcha/challenge"
+    ));
+    assert!(is_challenge_url(
+        "https://www.linkedin.com/security-check/verify"
+    ));
+    assert!(is_challenge_url(
+        "https://www.linkedin.com/feed/checkpoint?src=bot"
+    ));
+    assert!(is_challenge_url(
+        "https://www.linkedin.com/uas/login/challenge?sub=pin"
+    ));
 
     // Normal profile and feed URLs must not match
     assert!(!is_challenge_url("https://www.linkedin.com/in/john-doe/"));
     assert!(!is_challenge_url("https://www.linkedin.com/feed/"));
-    assert!(!is_challenge_url("https://www.linkedin.com/messaging/thread/2-abc/"));
+    assert!(!is_challenge_url(
+        "https://www.linkedin.com/messaging/thread/2-abc/"
+    ));
 }

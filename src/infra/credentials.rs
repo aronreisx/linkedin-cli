@@ -51,16 +51,25 @@ impl MockCredentialStore {
 
 impl CredentialStore for MockCredentialStore {
     fn get_credentials(&self, profile: &str) -> Result<Option<ProfileCredentials>, AppError> {
-        let lock = self.creds.lock().map_err(|e| AppError::Credential(e.to_string()))?;
+        let lock = self
+            .creds
+            .lock()
+            .map_err(|e| AppError::Credential(e.to_string()))?;
         Ok(lock.get(profile).cloned())
     }
 
     fn set_credentials(&self, profile: &str, creds: &ProfileCredentials) -> Result<(), AppError> {
         {
-            let mut lock = self.creds.lock().map_err(|e| AppError::Credential(e.to_string()))?;
+            let mut lock = self
+                .creds
+                .lock()
+                .map_err(|e| AppError::Credential(e.to_string()))?;
             lock.insert(profile.to_string(), creds.clone());
         }
-        let mut cfg = self.config.lock().map_err(|e| AppError::Credential(e.to_string()))?;
+        let mut cfg = self
+            .config
+            .lock()
+            .map_err(|e| AppError::Credential(e.to_string()))?;
         if !cfg.profiles.contains(&profile.to_string()) {
             cfg.profiles.push(profile.to_string());
         }
@@ -68,19 +77,35 @@ impl CredentialStore for MockCredentialStore {
     }
 
     fn delete_credentials(&self, profile: &str) -> Result<bool, AppError> {
-        let mut lock = self.creds.lock().map_err(|e| AppError::Credential(e.to_string()))?;
+        let mut lock = self
+            .creds
+            .lock()
+            .map_err(|e| AppError::Credential(e.to_string()))?;
         let removed = lock.remove(profile).is_some();
-        let mut cfg = self.config.lock().map_err(|e| AppError::Credential(e.to_string()))?;
+        let mut cfg = self
+            .config
+            .lock()
+            .map_err(|e| AppError::Credential(e.to_string()))?;
         cfg.profiles.retain(|p| p != profile);
         if cfg.active_profile == profile {
-            cfg.active_profile = cfg.profiles.first().cloned().unwrap_or_else(|| "default".to_string());
+            cfg.active_profile = cfg
+                .profiles
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "default".to_string());
         }
         Ok(removed)
     }
 
     fn list_profiles(&self) -> Result<Vec<ProfileSummary>, AppError> {
-        let cfg = self.config.lock().map_err(|e| AppError::Credential(e.to_string()))?;
-        let creds_lock = self.creds.lock().map_err(|e| AppError::Credential(e.to_string()))?;
+        let cfg = self
+            .config
+            .lock()
+            .map_err(|e| AppError::Credential(e.to_string()))?;
+        let creds_lock = self
+            .creds
+            .lock()
+            .map_err(|e| AppError::Credential(e.to_string()))?;
         let base_dir = resolve_base_dir();
 
         let mut summaries = Vec::new();
@@ -92,19 +117,29 @@ impl CredentialStore for MockCredentialStore {
                 has_username: cred.and_then(|c| c.username.as_ref()).is_some(),
                 has_password: cred.and_then(|c| c.password.as_ref()).is_some(),
                 has_cookies: cred.and_then(|c| c.li_at.as_ref()).is_some(),
-                user_data_dir: base_dir.join("profiles").join(profile).to_string_lossy().to_string(),
+                user_data_dir: base_dir
+                    .join("profiles")
+                    .join(profile)
+                    .to_string_lossy()
+                    .to_string(),
             });
         }
         Ok(summaries)
     }
 
     fn get_active_profile(&self) -> Result<String, AppError> {
-        let cfg = self.config.lock().map_err(|e| AppError::Credential(e.to_string()))?;
+        let cfg = self
+            .config
+            .lock()
+            .map_err(|e| AppError::Credential(e.to_string()))?;
         Ok(cfg.active_profile.clone())
     }
 
     fn set_active_profile(&self, profile: &str) -> Result<(), AppError> {
-        let mut cfg = self.config.lock().map_err(|e| AppError::Credential(e.to_string()))?;
+        let mut cfg = self
+            .config
+            .lock()
+            .map_err(|e| AppError::Credential(e.to_string()))?;
         if !cfg.profiles.contains(&profile.to_string()) {
             cfg.profiles.push(profile.to_string());
         }
@@ -207,7 +242,11 @@ impl CredentialStore for FileCredentialStore {
         let mut cfg = self.read_config();
         cfg.profiles.retain(|p| p != profile);
         if cfg.active_profile == profile {
-            cfg.active_profile = cfg.profiles.first().cloned().unwrap_or_else(|| "default".to_string());
+            cfg.active_profile = cfg
+                .profiles
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "default".to_string());
         }
         self.write_config(&cfg)?;
         Ok(removed)
@@ -226,7 +265,12 @@ impl CredentialStore for FileCredentialStore {
                 has_username: cred.and_then(|c| c.username.as_ref()).is_some(),
                 has_password: cred.and_then(|c| c.password.as_ref()).is_some(),
                 has_cookies: cred.and_then(|c| c.li_at.as_ref()).is_some(),
-                user_data_dir: self.base_dir.join("profiles").join(profile).to_string_lossy().to_string(),
+                user_data_dir: self
+                    .base_dir
+                    .join("profiles")
+                    .join(profile)
+                    .to_string_lossy()
+                    .to_string(),
             });
         }
         Ok(summaries)
@@ -269,7 +313,8 @@ impl KeyringCredentialStore {
     }
 
     fn keyring_entry(&self, profile: &str) -> Result<keyring::Entry, AppError> {
-        keyring::Entry::new(KEYRING_SERVICE, profile).map_err(|e| AppError::Credential(e.to_string()))
+        keyring::Entry::new(KEYRING_SERVICE, profile)
+            .map_err(|e| AppError::Credential(e.to_string()))
     }
 }
 
@@ -308,7 +353,9 @@ impl CredentialStore for KeyringCredentialStore {
         self.file_fallback.set_credentials(profile, creds)?;
 
         if saved_keyring {
-            tracing::info!("Credentials securely saved to native OS keyring for profile '{profile}'");
+            tracing::info!(
+                "Credentials securely saved to native OS keyring for profile '{profile}'"
+            );
         }
         Ok(())
     }

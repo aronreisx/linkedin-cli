@@ -1,7 +1,7 @@
+use crate::errors::AppError;
 use chromiumoxide::Page;
 use serde_json::{json, Value};
 use tracing::debug;
-use crate::errors::AppError;
 
 pub struct InPageTransport;
 
@@ -22,17 +22,12 @@ impl InPageTransport {
             headers_map.insert((*k).to_string(), Value::String((*v).to_string()));
         }
 
-        let args = json!([
-            method,
-            url,
-            Value::Object(headers_map),
-            body,
-            timeout_ms
-        ]);
+        let args = json!([method, url, Value::Object(headers_map), body, timeout_ms]);
 
         let args_json = serde_json::to_string(&args).map_err(AppError::Json)?;
 
-        let script = format!(r#"
+        let script = format!(
+            r#"
             (async ([method, url, headersObj, bodyStr, timeoutMs]) => {{
                 const getCookie = (name) => {{
                     const match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
@@ -88,7 +83,8 @@ impl InPageTransport {
                     }};
                 }}
             }})({args_json})
-        "#);
+        "#
+        );
 
         let eval_res = page
             .evaluate(script)

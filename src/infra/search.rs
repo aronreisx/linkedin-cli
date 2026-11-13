@@ -77,7 +77,10 @@ trait NegDigits {
 
 impl NegDigits for str {
     fn lstrip_neg_digits(&self) -> bool {
-        self.strip_prefix('-').unwrap_or(self).chars().all(|c| c.is_ascii_digit())
+        self.strip_prefix('-')
+            .unwrap_or(self)
+            .chars()
+            .all(|c| c.is_ascii_digit())
     }
 }
 
@@ -95,7 +98,8 @@ impl PeopleSearchService for ChromiumPeopleSearchService {
         info!(target: "search", "Searching people for: {keywords} (page {page}, actively_hiring={actively_hiring})");
         human_jitter(&self.rule).await;
 
-        let search_url = build_people_search_url(keywords, networks, locations, actively_hiring, page);
+        let search_url =
+            build_people_search_url(keywords, networks, locations, actively_hiring, page);
 
         self.page
             .goto(&search_url)
@@ -233,7 +237,12 @@ pub fn build_people_search_url(
     if !networks.is_empty() {
         let codes: Vec<String> = networks
             .iter()
-            .map(|n| format!("\"{}\"", ChromiumPeopleSearchService::resolve_network_code(n)))
+            .map(|n| {
+                format!(
+                    "\"{}\"",
+                    ChromiumPeopleSearchService::resolve_network_code(n)
+                )
+            })
             .collect();
         query_params.push(format!("network=[{}]", codes.join(",")));
     }

@@ -1,0 +1,55 @@
+name: 🐛 Bug Report
+description: File a bug report to help improve LinkedIn CLI
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please ensure you have checked existing issues before filing.
+
+  - type: input
+    id: version
+    attributes:
+      label: CLI Version
+      description: What version of the CLI are you running? (Run `linkedin --version`)
+      placeholder: "e.g. linkedin 0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - macOS (Apple Silicon - M1/M2/M3)
+        - macOS (Intel)
+        - Linux (Ubuntu/Debian)
+        - Linux (Arch/Fedora/Other)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the Bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this behavior? Include the exact command run.
+      placeholder: |
+        1. Run `linkedin ...`
+        2. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Terminal Output / Logs
+      description: Please copy and paste the error output, preferably run with `RUST_LOG=debug`.
+      render: shell

@@ -23,7 +23,11 @@ impl ChromiumContactInfoFetcher {
 
 #[async_trait]
 impl ContactInfoFetcher for ChromiumContactInfoFetcher {
-    async fn get_contact_info(&self, handle_or_url: &str, raw: bool) -> Result<(ContactInfo, Option<Value>), AppError> {
+    async fn get_contact_info(
+        &self,
+        handle_or_url: &str,
+        raw: bool,
+    ) -> Result<(ContactInfo, Option<Value>), AppError> {
         let public_id = ChromiumProfileScraper::extract_public_id(handle_or_url);
         info!(target: "contact", "Fetching contact info for: {public_id}");
         human_jitter(&self.rule).await;
@@ -32,12 +36,16 @@ impl ContactInfoFetcher for ChromiumContactInfoFetcher {
             "https://www.linkedin.com/voyager/api/identity/profiles/{public_id}/profileContactInfo"
         );
 
-        let (status, ok, body) = InPageTransport::fetch(&self.page, "GET", &voyager_url, &[], None, 15_000).await?;
+        let (status, ok, body) =
+            InPageTransport::fetch(&self.page, "GET", &voyager_url, &[], None, 15_000).await?;
 
         if ok && status == 200 {
             let json_val: Value = serde_json::from_str(&body).map_err(AppError::Json)?;
 
-            let email = json_val.get("emailAddress").and_then(|e| e.as_str()).map(|s| s.to_string());
+            let email = json_val
+                .get("emailAddress")
+                .and_then(|e| e.as_str())
+                .map(|s| s.to_string());
             let mut emails = Vec::new();
             if let Some(ref e) = email {
                 emails.push(e.clone());
@@ -78,7 +86,10 @@ impl ContactInfoFetcher for ChromiumContactInfoFetcher {
                     _ => b.to_string(),
                 }
             });
-            let connected = json_val.get("connectedAt").and_then(|c| c.as_str()).map(|s| s.to_string());
+            let connected = json_val
+                .get("connectedAt")
+                .and_then(|c| c.as_str())
+                .map(|s| s.to_string());
 
             let contact_info = ContactInfo {
                 public_identifier: public_id,
@@ -306,14 +317,14 @@ impl ContactInfoFetcher for ChromiumContactInfoFetcher {
             })()
         "#;
 
-        let eval_res = self
-            .page
-            .evaluate(js_extract)
-            .await
-            .map_err(|e| AppError::ExtractionFailed {
-                target: overlay_url.clone(),
-                reason: e.to_string(),
-            })?;
+        let eval_res =
+            self.page
+                .evaluate(js_extract)
+                .await
+                .map_err(|e| AppError::ExtractionFailed {
+                    target: overlay_url.clone(),
+                    reason: e.to_string(),
+                })?;
 
         let val = eval_res
             .into_value::<Value>()
@@ -323,18 +334,38 @@ impl ContactInfoFetcher for ChromiumContactInfoFetcher {
             })?;
 
         let email = val["email"].as_str().map(|s| s.to_string());
-        let emails = val["emails"].as_array().map(|arr| {
-            arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
-        }).unwrap_or_default();
-        let phone_numbers = val["phone_numbers"].as_array().map(|arr| {
-            arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
-        }).unwrap_or_default();
-        let websites = val["websites"].as_array().map(|arr| {
-            arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
-        }).unwrap_or_default();
-        let twitter_handles = val["twitter_handles"].as_array().map(|arr| {
-            arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
-        }).unwrap_or_default();
+        let emails = val["emails"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let phone_numbers = val["phone_numbers"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let websites = val["websites"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let twitter_handles = val["twitter_handles"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
         let birthday = val["birthday"].as_str().map(|s| s.to_string());
         let connected = val["connected"].as_str().map(|s| s.to_string());
 

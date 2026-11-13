@@ -31,7 +31,9 @@ fn render_tabs(f: &mut Frame, area: Rect, state: &TuiState) {
         .iter()
         .map(|t| {
             let style = if *t == state.active_tab {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
             };
@@ -40,14 +42,22 @@ fn render_tabs(f: &mut Frame, area: Rect, state: &TuiState) {
         .collect();
 
     let tabs = Tabs::new(titles)
-        .block(Block::default().borders(Borders::ALL).title(" LinkedIn CLI (linkedin) TUI "))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" LinkedIn CLI (linkedin) TUI "),
+        )
         .select(match state.active_tab {
             TuiTab::Invitations => 0,
             TuiTab::Messages => 1,
             TuiTab::Drafts => 2,
         })
         .style(Style::default().fg(Color::White))
-        .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+        .highlight_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
 
     f.render_widget(tabs, area);
 }
@@ -73,9 +83,10 @@ fn render_item_list(f: &mut Frame, area: Rect, state: &TuiState) {
     };
 
     let items: Vec<ListItem> = if state.items.is_empty() {
-        vec![ListItem::new(Line::from(vec![
-            Span::styled("  <No items found in this view>", Style::default().fg(Color::DarkGray))
-        ]))]
+        vec![ListItem::new(Line::from(vec![Span::styled(
+            "  <No items found in this view>",
+            Style::default().fg(Color::DarkGray),
+        )]))]
     } else {
         state
             .items
@@ -86,7 +97,9 @@ fn render_item_list(f: &mut Frame, area: Rect, state: &TuiState) {
                 let prefix = if is_selected { "▶ " } else { "  " };
 
                 let title_style = if is_selected {
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::White)
                 };
@@ -110,8 +123,7 @@ fn render_item_list(f: &mut Frame, area: Rect, state: &TuiState) {
             .collect()
     };
 
-    let list_widget = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title));
+    let list_widget = List::new(items).block(Block::default().borders(Borders::ALL).title(title));
 
     f.render_widget(list_widget, area);
 }
@@ -139,15 +151,27 @@ fn render_detail_pane(f: &mut Frame, area: Rect, state: &TuiState) {
 fn render_status_bar(f: &mut Frame, area: Rect, state: &TuiState) {
     let p = Paragraph::new(Line::from(vec![
         Span::styled(" ", Style::default()),
-        Span::styled(&state.status_message, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            &state.status_message,
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
     ]))
-    .block(Block::default().borders(Borders::ALL).title(" Status & Keybindings "));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Status & Keybindings "),
+    );
 
     f.render_widget(p, area);
 }
 
 /// Helper to render directly into any ratatui Terminal instance (e.g. TestBackend)
-pub fn render_tui_terminal<B: Backend>(terminal: &mut Terminal<B>, state: &TuiState) -> Result<(), std::io::Error> {
+pub fn render_tui_terminal<B: Backend>(
+    terminal: &mut Terminal<B>,
+    state: &TuiState,
+) -> Result<(), std::io::Error> {
     terminal.draw(|f| render_tui(f, state))?;
     Ok(())
 }
@@ -227,7 +251,9 @@ pub fn map_key_to_tui_action(key: crossterm::event::KeyCode) -> TuiAction {
 pub fn run_interactive_tui(mut state: TuiState) -> Result<(), AppError> {
     use crossterm::event::{self, Event, KeyEventKind};
     use crossterm::execute;
-    use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+    use crossterm::terminal::{
+        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    };
     use ratatui::backend::CrosstermBackend;
     use std::io::stdout;
 

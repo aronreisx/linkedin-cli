@@ -1,6 +1,6 @@
-use std::io::Write;
 use assert_cmd::Command;
 use serde_json::json;
+use std::io::Write;
 use tempfile::NamedTempFile;
 
 use linkedin::domain::{
@@ -24,10 +24,19 @@ fn test_safe_messaging_template_rendering() -> Result<(), Box<dyn std::error::Er
     let rendered = render_batch_templates(template, &recipients)?;
     assert_eq!(rendered.len(), 2);
     assert_eq!(rendered[0].recipient, "alice");
-    assert_eq!(rendered[0].text, "Hi Alice, saw your work at RustCorp on Systems Engineer!");
+    assert_eq!(
+        rendered[0].text,
+        "Hi Alice, saw your work at RustCorp on Systems Engineer!"
+    );
     assert_eq!(rendered[1].recipient, "bob");
-    assert_eq!(rendered[1].text, "Hi Bob, saw your work at CloudInc on DevOps Architect!");
-    assert_eq!(rendered[0].utf16_len, rendered[0].text.encode_utf16().count());
+    assert_eq!(
+        rendered[1].text,
+        "Hi Bob, saw your work at CloudInc on DevOps Architect!"
+    );
+    assert_eq!(
+        rendered[0].utf16_len,
+        rendered[0].text.encode_utf16().count()
+    );
 
     Ok(())
 }
@@ -44,13 +53,15 @@ fn test_safe_messaging_content_variance_check() -> Result<(), Box<dyn std::error
         },
         linkedin::domain::RenderedMessage {
             recipient: "bob".to_string(),
-            text: "Greetings Bob, would love to connect and discuss Kubernetes scaling.".to_string(),
+            text: "Greetings Bob, would love to connect and discuss Kubernetes scaling."
+                .to_string(),
             utf16_len: 68,
             attachment: None,
         },
         linkedin::domain::RenderedMessage {
             recipient: "carol".to_string(),
-            text: "Hey Carol! Noticed your recent publication on distributed transactions.".to_string(),
+            text: "Hey Carol! Noticed your recent publication on distributed transactions."
+                .to_string(),
             utf16_len: 71,
             attachment: None,
         },
@@ -126,7 +137,10 @@ fn test_safe_messaging_randomized_dispatch_jitter() {
     // Ensure randomization is active (variance between min and max)
     let min_sampled = *samples.iter().min().unwrap();
     let max_sampled = *samples.iter().max().unwrap();
-    assert!(min_sampled < max_sampled, "Random jitter must produce variable delays");
+    assert!(
+        min_sampled < max_sampled,
+        "Random jitter must produce variable delays"
+    );
 }
 
 #[test]
@@ -140,9 +154,12 @@ fn test_cli_message_send_batch_dry_run() -> Result<(), Box<dyn std::error::Error
 
     let mut cmd = Command::cargo_bin("linkedin")?;
     cmd.args([
-        "message", "send-batch",
-        "--template", "Hi {{ name }} at {{ company }}!",
-        "--recipients", tmp_recipients.path().to_str().unwrap(),
+        "message",
+        "send-batch",
+        "--template",
+        "Hi {{ name }} at {{ company }}!",
+        "--recipients",
+        tmp_recipients.path().to_str().unwrap(),
         "--dry-run",
         "--json",
     ])
@@ -166,12 +183,17 @@ fn test_cli_message_send_batch_attachments_dry_run() -> Result<(), Box<dyn std::
 
     let mut cmd = Command::cargo_bin("linkedin")?;
     cmd.args([
-        "message", "send-batch",
-        "--template", "Hi {{ name }}!",
-        "--recipients", tmp_recipients.path().to_str().unwrap(),
-        "--attachment", "assets/default_deck.pdf",
+        "message",
+        "send-batch",
+        "--template",
+        "Hi {{ name }}!",
+        "--recipients",
+        tmp_recipients.path().to_str().unwrap(),
+        "--attachment",
+        "assets/default_deck.pdf",
         "--dry-run",
-        "-o", "json",
+        "-o",
+        "json",
     ])
     .assert()
     .success()

@@ -9,9 +9,9 @@ pub mod messaging;
 pub mod scraper;
 pub mod search;
 pub mod timeline;
+pub mod tripwire;
 pub mod tui;
 pub mod typing;
-pub mod tripwire;
 
 pub use connection::ChromiumConnectionManager;
 pub use contact::ChromiumContactInfoFetcher;

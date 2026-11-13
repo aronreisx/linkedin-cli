@@ -42,7 +42,10 @@ fn test_session_registry_lifecycle() {
 #[test]
 fn test_session_pid_liveness_check() {
     let current_pid = std::process::id();
-    assert!(is_pid_alive(current_pid), "Current process PID must be alive");
+    assert!(
+        is_pid_alive(current_pid),
+        "Current process PID must be alive"
+    );
 
     // PID 99999999 is virtually guaranteed not to be in use
     let non_existent_pid = 99_999_999;
@@ -56,7 +59,15 @@ fn test_session_pid_liveness_check() {
 fn test_session_open_dry_run() {
     let mut cmd = Command::cargo_bin("linkedin").unwrap();
     let assert = cmd
-        .args(["--dry-run", "-o", "json", "session", "open", "--name", "research-bot"])
+        .args([
+            "--dry-run",
+            "-o",
+            "json",
+            "session",
+            "open",
+            "--name",
+            "research-bot",
+        ])
         .assert()
         .success();
 
@@ -73,7 +84,15 @@ fn test_session_open_dry_run() {
 fn test_session_status_dry_run() {
     let mut cmd = Command::cargo_bin("linkedin").unwrap();
     let assert = cmd
-        .args(["--dry-run", "-o", "json", "session", "status", "--name", "research-bot"])
+        .args([
+            "--dry-run",
+            "-o",
+            "json",
+            "session",
+            "status",
+            "--name",
+            "research-bot",
+        ])
         .assert()
         .success();
 
@@ -90,7 +109,15 @@ fn test_session_status_dry_run() {
 fn test_session_close_dry_run() {
     let mut cmd = Command::cargo_bin("linkedin").unwrap();
     let assert = cmd
-        .args(["--dry-run", "-o", "json", "session", "close", "--name", "research-bot"])
+        .args([
+            "--dry-run",
+            "-o",
+            "json",
+            "session",
+            "close",
+            "--name",
+            "research-bot",
+        ])
         .assert()
         .success();
 

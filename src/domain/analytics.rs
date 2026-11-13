@@ -28,35 +28,44 @@ pub struct PostAnalytics {
 
 /// Parses raw LinkedIn Voyager analytics payload into clean PostAnalytics domain struct
 pub fn parse_voyager_analytics(val: &Value, post_urn: &str) -> Result<PostAnalytics, AppError> {
-    let summary = val.get("summary").or_else(|| val.get("data")).unwrap_or(val);
+    let summary = val
+        .get("summary")
+        .or_else(|| val.get("data"))
+        .unwrap_or(val);
 
-    let impressions = summary.get("impressionCount")
+    let impressions = summary
+        .get("impressionCount")
         .or_else(|| summary.get("impressions"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
-    let unique_impressions = summary.get("uniqueImpressionsCount")
+    let unique_impressions = summary
+        .get("uniqueImpressionsCount")
         .or_else(|| summary.get("uniqueImpressions"))
         .and_then(|v| v.as_u64())
         .unwrap_or(impressions);
 
-    let clicks = summary.get("clickCount")
+    let clicks = summary
+        .get("clickCount")
         .or_else(|| summary.get("clicks"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
-    let reactions = summary.get("reactionCount")
+    let reactions = summary
+        .get("reactionCount")
         .or_else(|| summary.get("likeCount"))
         .or_else(|| summary.get("reactions"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
-    let comments = summary.get("commentCount")
+    let comments = summary
+        .get("commentCount")
         .or_else(|| summary.get("comments"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
-    let reposts = summary.get("repostCount")
+    let reposts = summary
+        .get("repostCount")
         .or_else(|| summary.get("shareCount"))
         .or_else(|| summary.get("reposts"))
         .and_then(|v| v.as_u64())
@@ -78,8 +87,17 @@ pub fn parse_voyager_analytics(val: &Value, post_urn: &str) -> Result<PostAnalyt
     let mut demographics = Vec::new();
     if let Some(demos) = val.get("demographics").and_then(|v| v.as_array()) {
         for d in demos {
-            let category = d.get("category").and_then(|v| v.as_str()).unwrap_or("General").to_string();
-            let label = d.get("label").or_else(|| d.get("name")).and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+            let category = d
+                .get("category")
+                .and_then(|v| v.as_str())
+                .unwrap_or("General")
+                .to_string();
+            let label = d
+                .get("label")
+                .or_else(|| d.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
             let percentage = d.get("percentage").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let count = d.get("count").and_then(|v| v.as_u64());
 

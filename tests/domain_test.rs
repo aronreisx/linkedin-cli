@@ -25,7 +25,10 @@ fn test_profile_serialization() -> Result<(), Box<dyn std::error::Error>> {
             company_urn: None,
             location: Some("San Francisco".to_string()),
             date_range: Some(DateRange {
-                start: Some(Date { year: Some(2021), month: Some(1) }),
+                start: Some(Date {
+                    year: Some(2021),
+                    month: Some(1),
+                }),
                 end: None,
             }),
             description: Some("Building distributed systems".to_string()),
@@ -62,15 +65,42 @@ fn test_auth_status_serialization() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_page_state_classification() {
-    assert_eq!(classify_page_url("https://www.linkedin.com/feed/"), PageState::Feed);
-    assert_eq!(classify_page_url("https://www.linkedin.com/feed/?trk=nav"), PageState::Feed);
-    assert_eq!(classify_page_url("https://www.linkedin.com/login?session_redirect=%2Ffeed%2F"), PageState::Login);
-    assert_eq!(classify_page_url("https://www.linkedin.com/uas/login"), PageState::Login);
-    assert_eq!(classify_page_url("https://www.linkedin.com/checkpoint/challenge/123"), PageState::Checkpoint);
-    assert_eq!(classify_page_url("https://www.linkedin.com/authwall?trk=rip"), PageState::Authwall);
-    assert_eq!(classify_page_url("https://www.linkedin.com/in/alice-smith/"), PageState::Profile);
-    assert_eq!(classify_page_url("https://www.linkedin.com/messaging/thread/123"), PageState::Messaging);
-    assert_eq!(classify_page_url("https://www.linkedin.com/random-page"), PageState::Unknown);
+    assert_eq!(
+        classify_page_url("https://www.linkedin.com/feed/"),
+        PageState::Feed
+    );
+    assert_eq!(
+        classify_page_url("https://www.linkedin.com/feed/?trk=nav"),
+        PageState::Feed
+    );
+    assert_eq!(
+        classify_page_url("https://www.linkedin.com/login?session_redirect=%2Ffeed%2F"),
+        PageState::Login
+    );
+    assert_eq!(
+        classify_page_url("https://www.linkedin.com/uas/login"),
+        PageState::Login
+    );
+    assert_eq!(
+        classify_page_url("https://www.linkedin.com/checkpoint/challenge/123"),
+        PageState::Checkpoint
+    );
+    assert_eq!(
+        classify_page_url("https://www.linkedin.com/authwall?trk=rip"),
+        PageState::Authwall
+    );
+    assert_eq!(
+        classify_page_url("https://www.linkedin.com/in/alice-smith/"),
+        PageState::Profile
+    );
+    assert_eq!(
+        classify_page_url("https://www.linkedin.com/messaging/thread/123"),
+        PageState::Messaging
+    );
+    assert_eq!(
+        classify_page_url("https://www.linkedin.com/random-page"),
+        PageState::Unknown
+    );
 }
 
 #[test]

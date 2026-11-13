@@ -406,8 +406,7 @@ impl JobService for ChromiumJobService {
             )));
         }
 
-        let details: JobDetails = serde_json::from_value(val)
-            .map_err(AppError::Json)?;
+        let details: JobDetails = serde_json::from_value(val).map_err(AppError::Json)?;
 
         Ok(details)
     }
@@ -455,12 +454,23 @@ impl JobService for ChromiumJobService {
             .map_err(|e| AppError::Cdp(e.to_string()))?;
 
         let val: Value = eval_res.into_value().unwrap_or(Value::Null);
-        let success = val.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-        let already_saved = val.get("already_saved").and_then(|v| v.as_bool()).unwrap_or(false);
+        let success = val
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let already_saved = val
+            .get("already_saved")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         if !success {
-            let reason = val.get("reason").and_then(|v| v.as_str()).unwrap_or("Action failed");
-            return Err(AppError::Browser(format!("Failed to save job {job_id}: {reason}")));
+            let reason = val
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Action failed");
+            return Err(AppError::Browser(format!(
+                "Failed to save job {job_id}: {reason}"
+            )));
         }
 
         human_jitter(&self.rule).await;
@@ -520,12 +530,23 @@ impl JobService for ChromiumJobService {
             .map_err(|e| AppError::Cdp(e.to_string()))?;
 
         let val: Value = eval_res.into_value().unwrap_or(Value::Null);
-        let success = val.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-        let was_not_saved = val.get("was_not_saved").and_then(|v| v.as_bool()).unwrap_or(false);
+        let success = val
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let was_not_saved = val
+            .get("was_not_saved")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         if !success {
-            let reason = val.get("reason").and_then(|v| v.as_str()).unwrap_or("Action failed");
-            return Err(AppError::Browser(format!("Failed to unsave job {job_id}: {reason}")));
+            let reason = val
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Action failed");
+            return Err(AppError::Browser(format!(
+                "Failed to unsave job {job_id}: {reason}"
+            )));
         }
 
         human_jitter(&self.rule).await;
