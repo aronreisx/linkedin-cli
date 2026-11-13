@@ -187,6 +187,31 @@ linkedin feed repost urn:li:activity:7123456789012345678
 linkedin feed repost urn:li:activity:7123456789012345678 --text "Key takeaways from this discussion..."
 ```
 
+### Job Search & Saved Opportunities
+```bash
+# Search job postings with faceted filters (workplace, timeframe, experience, Easy Apply)
+linkedin jobs search "Staff AI Engineer" \
+  --location "Remote" \
+  --workplace remote,hybrid \
+  --posted past-week \
+  --experience mid-senior,director \
+  --easy-apply \
+  --limit 20 \
+  --json
+
+# Inspect full job posting description, hiring team recruiter, salary, and required skills
+linkedin jobs get 4123456789 --json
+
+# Save a job posting to your saved jobs list
+linkedin jobs save 4123456789
+
+# Remove a job from your saved jobs list
+linkedin jobs unsave 4123456789
+
+# List your saved jobs
+linkedin jobs saved --limit 10 --json
+```
+
 ### Post Drafts & Scheduling
 ```bash
 # Stage a post draft with a scheduled publish date

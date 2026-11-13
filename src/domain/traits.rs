@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
+use crate::domain::jobs::{JobDetails, JobSaveResult, JobSearchFilter, JobSearchResult, JobSummary};
 use crate::domain::models::{
     AuthStatus, ContactInfo, InboxFilter, InboxResult,
     Invitation, Message, PeopleSearchResult, Profile, SelfProfile, StatusResult,
@@ -80,4 +81,13 @@ pub trait TimelineService: Send + Sync {
     async fn unreact(&self, post_urn: &str) -> Result<ReactionResult, AppError>;
     async fn add_comment(&self, post_urn: &str, text: &str) -> Result<CommentResult, AppError>;
     async fn repost(&self, post_urn: &str, commentary: Option<&str>) -> Result<RepostResult, AppError>;
+}
+
+#[async_trait]
+pub trait JobService: Send + Sync {
+    async fn search_jobs(&self, filter: &JobSearchFilter) -> Result<JobSearchResult, AppError>;
+    async fn get_job(&self, job_id_or_url: &str) -> Result<JobDetails, AppError>;
+    async fn save_job(&self, job_id_or_url: &str) -> Result<JobSaveResult, AppError>;
+    async fn unsave_job(&self, job_id_or_url: &str) -> Result<JobSaveResult, AppError>;
+    async fn list_saved_jobs(&self, limit: usize) -> Result<Vec<JobSummary>, AppError>;
 }

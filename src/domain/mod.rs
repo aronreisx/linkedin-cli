@@ -1,6 +1,7 @@
 pub mod analytics;
 pub mod credentials;
 pub mod drafts;
+pub mod jobs;
 pub mod messaging_batch;
 pub mod models;
 pub mod page_state;
@@ -12,6 +13,7 @@ pub mod tui_state;
 pub use analytics::*;
 pub use credentials::*;
 pub use drafts::*;
+pub use jobs::*;
 pub use messaging_batch::*;
 pub use models::*;
 pub use page_state::*;

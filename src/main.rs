@@ -4,14 +4,15 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use linkedin::browser::{BrowserConfig, BrowserSession};
 use linkedin::domain::{
-    ConnectionManager, ConnectionState, ContactInfoFetcher, FeedSort, InboxFilter, InteractionRule,
-    InvitationManager, LinkedInDriver, MessagingService, PeopleSearchService, ProfileScraper,
-    ReactionType, TimelinePost, TimelineService,
+    ConnectionManager, ConnectionState, ContactInfoFetcher, DatePosted, ExperienceLevel, FeedSort,
+    InboxFilter, InteractionRule, InvitationManager, JobDetails, JobSearchFilter, JobService,
+    JobSummary, LinkedInDriver, MessagingService, PeopleSearchService, ProfileScraper, ReactionType,
+    TimelinePost, TimelineService, WorkplaceType,
 };
 use linkedin::infra::{
-    ChromiumConnectionManager, ChromiumContactInfoFetcher, ChromiumLinkedInDriver,
-    ChromiumMessagingService, ChromiumPeopleSearchService, ChromiumProfileScraper,
-    ChromiumTimelineService,
+    ChromiumConnectionManager, ChromiumContactInfoFetcher, ChromiumJobService,
+    ChromiumLinkedInDriver, ChromiumMessagingService, ChromiumPeopleSearchService,
+    ChromiumProfileScraper, ChromiumTimelineService,
 };
 use linkedin::render::{render_data, render_dry_run, DryRunAction, OutputFormat};
 
@@ -100,6 +101,9 @@ enum Commands {
 
     /// Timeline and home feed interactions (read updates, react, comment, repost)
     Feed(FeedArgs),
+
+    /// Job search, details extraction, and saved jobs management
+    Jobs(JobsArgs),
 
     /// Local draft staging, scheduling, and export (deprecated alias: use 'linkedin post draft')
     #[command(hide = true)]
@@ -486,6 +490,63 @@ enum FeedCommands {
         /// Optional commentary note for a quote repost
         #[arg(long)]
         note: Option<String>,
+    },
+}
+
+#[derive(clap::Args, Debug)]
+struct JobsArgs {
+    #[command(subcommand)]
+    command: JobsCommands,
+}
+
+#[derive(Subcommand, Debug)]
+enum JobsCommands {
+    /// Search job postings with faceted filters
+    Search {
+        /// Keywords or job title query
+        keywords: Option<String>,
+        /// Location filter (e.g. "Remote", "San Francisco, CA", "Portugal")
+        #[arg(long)]
+        location: Option<String>,
+        /// Workplace flexibility policy: onsite, remote, hybrid (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        workplace: Vec<String>,
+        /// Timeframe posted: past-24h, past-week, past-month, any
+        #[arg(long)]
+        posted: Option<String>,
+        /// Experience level: internship, entry, associate, mid-senior, director, executive (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        experience: Vec<String>,
+        /// Filter for LinkedIn Easy Apply postings
+        #[arg(long)]
+        easy_apply: bool,
+        /// Maximum number of job postings to retrieve (default: 20)
+        #[arg(long, default_value = "20")]
+        limit: usize,
+        /// Results page number (default: 1)
+        #[arg(long, default_value = "1")]
+        page: u32,
+    },
+    /// Inspect full details for a job posting
+    Get {
+        /// Job posting ID or URL (e.g. 4123456789 or https://www.linkedin.com/jobs/view/4123456789)
+        id: String,
+    },
+    /// Save a job posting to your saved jobs list
+    Save {
+        /// Job posting ID or URL
+        id: String,
+    },
+    /// Remove a job posting from your saved jobs list
+    Unsave {
+        /// Job posting ID or URL
+        id: String,
+    },
+    /// List your saved job postings
+    Saved {
+        /// Maximum number of saved jobs to list (default: 20)
+        #[arg(long, default_value = "20")]
+        limit: usize,
     },
 }
 
@@ -1413,6 +1474,157 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                 }),
                 dry_run: true,
             },
+            Commands::Jobs(JobsArgs { command: JobsCommands::Search { keywords, location, workplace, posted, experience, easy_apply, limit, page } }) => {
+                let mut wp_enums = Vec::new();
+                for w in workplace {
+                    wp_enums.push(w.parse::<WorkplaceType>()?);
+                }
+                let posted_enum = if let Some(p) = posted {
+                    Some(p.parse::<DatePosted>()?)
+                } else {
+                    None
+                };
+                let mut exp_enums = Vec::new();
+                for e in experience {
+                    exp_enums.push(e.parse::<ExperienceLevel>()?);
+                }
+
+                let filter = JobSearchFilter {
+                    keywords: keywords.clone(),
+                    location: location.clone(),
+                    workplace: wp_enums,
+                    date_posted: posted_enum,
+                    experience: exp_enums,
+                    easy_apply: *easy_apply,
+                    limit: *limit,
+                    page: *page,
+                };
+
+                let mock_jobs = vec![
+                    JobSummary {
+                        id: "4100000001".to_string(),
+                        urn: "urn:li:jobPosting:4100000001".to_string(),
+                        title: "Staff AI Systems Engineer".to_string(),
+                        company_name: "Anthropic".to_string(),
+                        company_handle: Some("anthropic-ai".to_string()),
+                        location: "San Francisco, CA (Hybrid)".to_string(),
+                        workplace_type: Some("Hybrid".to_string()),
+                        posted_at: Some("2d".to_string()),
+                        is_easy_apply: true,
+                        job_url: "https://www.linkedin.com/jobs/view/4100000001/".to_string(),
+                    },
+                    JobSummary {
+                        id: "4100000002".to_string(),
+                        urn: "urn:li:jobPosting:4100000002".to_string(),
+                        title: "Senior Rust & Distributed Systems Engineer".to_string(),
+                        company_name: "Cloudflare".to_string(),
+                        company_handle: Some("cloudflare".to_string()),
+                        location: "Remote, US".to_string(),
+                        workplace_type: Some("Remote".to_string()),
+                        posted_at: Some("1w".to_string()),
+                        is_easy_apply: false,
+                        job_url: "https://www.linkedin.com/jobs/view/4100000002/".to_string(),
+                    },
+                ];
+
+                let mut jobs = mock_jobs;
+                jobs.truncate(*limit);
+
+                if format == OutputFormat::Ndjson {
+                    linkedin::render::stream_ndjson_items(&jobs)?;
+                } else {
+                    let result = linkedin::domain::JobSearchResult {
+                        total: jobs.len(),
+                        jobs,
+                        page: *page,
+                        query: keywords.clone(),
+                    };
+                    render_data(&result, format, &format!("[DRY-RUN] Job search URL: {}", filter.build_url()))?;
+                }
+                return Ok(());
+            }
+            Commands::Jobs(JobsArgs { command: JobsCommands::Get { id } }) => {
+                let norm_id = ChromiumJobService::normalize_job_id(id);
+                let mock_details = JobDetails {
+                    id: norm_id.clone(),
+                    urn: format!("urn:li:jobPosting:{norm_id}"),
+                    title: "Senior AI Systems Engineer".to_string(),
+                    company: linkedin::domain::CompanySummary {
+                        name: "Anthropic".to_string(),
+                        handle: Some("anthropic-ai".to_string()),
+                        url: Some("https://www.linkedin.com/company/anthropic-ai".to_string()),
+                    },
+                    location: "San Francisco, CA (Hybrid)".to_string(),
+                    workplace_type: Some("Hybrid".to_string()),
+                    posted_at: Some("3 days ago".to_string()),
+                    applicant_count: Some(64),
+                    is_easy_apply: true,
+                    salary_range: Some("$220,000 - $310,000 / year".to_string()),
+                    employment_type: Some("Full-time".to_string()),
+                    experience_level: Some("Mid-Senior level".to_string()),
+                    required_skills: vec!["Rust".to_string(), "Python".to_string(), "LLM Inference".to_string(), "Kubernetes".to_string()],
+                    hiring_team: vec![linkedin::domain::HiringMember {
+                        name: "Sarah Talent".to_string(),
+                        handle: Some("sarah-talent".to_string()),
+                        headline: Some("Staff Technical Recruiter @ Anthropic".to_string()),
+                        profile_url: Some("https://www.linkedin.com/in/sarah-talent".to_string()),
+                    }],
+                    description_markdown: "### About the Role\nWe are looking for an experienced systems engineer to scale AI agent infrastructure.".to_string(),
+                    job_url: format!("https://www.linkedin.com/jobs/view/{norm_id}/"),
+                };
+                render_data(&mock_details, format, &format!("[DRY-RUN] Job details for {norm_id}"))?;
+                return Ok(());
+            }
+            Commands::Jobs(JobsArgs { command: JobsCommands::Save { id } }) => {
+                let norm_id = ChromiumJobService::normalize_job_id(id);
+                DryRunAction {
+                    resource: "jobs".to_string(),
+                    action: "save".to_string(),
+                    target: Some(norm_id.clone()),
+                    parameters: serde_json::json!({
+                        "job_id": norm_id,
+                        "action": "save_job_posting"
+                    }),
+                    dry_run: true,
+                }
+            }
+            Commands::Jobs(JobsArgs { command: JobsCommands::Unsave { id } }) => {
+                let norm_id = ChromiumJobService::normalize_job_id(id);
+                DryRunAction {
+                    resource: "jobs".to_string(),
+                    action: "unsave".to_string(),
+                    target: Some(norm_id.clone()),
+                    parameters: serde_json::json!({
+                        "job_id": norm_id,
+                        "action": "unsave_job_posting"
+                    }),
+                    dry_run: true,
+                }
+            }
+            Commands::Jobs(JobsArgs { command: JobsCommands::Saved { limit } }) => {
+                let mock_saved = vec![
+                    JobSummary {
+                        id: "4100000001".to_string(),
+                        urn: "urn:li:jobPosting:4100000001".to_string(),
+                        title: "Staff AI Systems Engineer".to_string(),
+                        company_name: "Anthropic".to_string(),
+                        company_handle: Some("anthropic-ai".to_string()),
+                        location: "San Francisco, CA (Hybrid)".to_string(),
+                        workplace_type: Some("Hybrid".to_string()),
+                        posted_at: Some("Saved 2d ago".to_string()),
+                        is_easy_apply: true,
+                        job_url: "https://www.linkedin.com/jobs/view/4100000001/".to_string(),
+                    },
+                ];
+                let mut saved = mock_saved;
+                saved.truncate(*limit);
+                if format == OutputFormat::Ndjson {
+                    linkedin::render::stream_ndjson_items(&saved)?;
+                } else {
+                    render_data(&saved, format, "[DRY-RUN] Saved job postings")?;
+                }
+                return Ok(());
+            }
             other => DryRunAction {
                 resource: "query".to_string(),
                 action: "simulate".to_string(),
@@ -1450,6 +1662,9 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
         | Commands::ContactInfo { handle, .. } => {
             &format!("https://www.linkedin.com/in/{handle}/")
         }
+        Commands::Jobs(JobsArgs { command: JobsCommands::Search { .. } }) => "https://www.linkedin.com/jobs/search/",
+        Commands::Jobs(JobsArgs { command: JobsCommands::Saved { .. } }) => "https://www.linkedin.com/my-items/saved-jobs/",
+        Commands::Jobs(..) => "https://www.linkedin.com/jobs/",
         _ => "https://www.linkedin.com/feed/",
     };
     let page = session.get_or_create_page(target_url).await?;
@@ -1942,6 +2157,82 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
                         format!("Instantly reposted update {urn}")
                     };
                     render_data(&res, format, &summary)?;
+                }
+            }
+        }
+        Commands::Jobs(JobsArgs { command }) => {
+            let jobs_svc = ChromiumJobService::new(page, rule);
+            match command {
+                JobsCommands::Search { keywords, location, workplace, posted, experience, easy_apply, limit, page: p } => {
+                    let mut wp_enums = Vec::new();
+                    for w in workplace {
+                        wp_enums.push(w.parse::<WorkplaceType>()?);
+                    }
+                    let posted_enum = if let Some(posted_str) = posted {
+                        Some(posted_str.parse::<DatePosted>()?)
+                    } else {
+                        None
+                    };
+                    let mut exp_enums = Vec::new();
+                    for e in experience {
+                        exp_enums.push(e.parse::<ExperienceLevel>()?);
+                    }
+
+                    let filter = JobSearchFilter {
+                        keywords,
+                        location,
+                        workplace: wp_enums,
+                        date_posted: posted_enum,
+                        experience: exp_enums,
+                        easy_apply,
+                        limit,
+                        page: p,
+                    };
+
+                    let result = jobs_svc.search_jobs(&filter).await?;
+                    if format == OutputFormat::Ndjson {
+                        linkedin::render::stream_ndjson_items(&result.jobs)?;
+                    } else {
+                        let summary = format!("Found {} job(s) for query '{}' (page {})", result.jobs.len(), result.query.as_deref().unwrap_or(""), result.page);
+                        render_data(&result, format, &summary)?;
+                    }
+                }
+                JobsCommands::Get { id } => {
+                    let details = jobs_svc.get_job(&id).await?;
+                    let summary = format!(
+                        "Job: {} ({})\nCompany: {} | Location: {}\nWorkplace: {} | Posted: {}\nApplicants: {} | Easy Apply: {}\nSalary: {}\nSkills: {}\n\nDescription:\n{}",
+                        details.title,
+                        details.id,
+                        details.company.name,
+                        details.location,
+                        details.workplace_type.as_deref().unwrap_or("N/A"),
+                        details.posted_at.as_deref().unwrap_or("N/A"),
+                        details.applicant_count.map(|c| c.to_string()).unwrap_or_else(|| "N/A".to_string()),
+                        details.is_easy_apply,
+                        details.salary_range.as_deref().unwrap_or("N/A"),
+                        details.required_skills.join(", "),
+                        details.description_markdown
+                    );
+                    render_data(&details, format, &summary)?;
+                }
+                JobsCommands::Save { id } => {
+                    let res = jobs_svc.save_job(&id).await?;
+                    let summary = format!("Job {}: {}", res.job_id, res.message);
+                    render_data(&res, format, &summary)?;
+                }
+                JobsCommands::Unsave { id } => {
+                    let res = jobs_svc.unsave_job(&id).await?;
+                    let summary = format!("Job {}: {}", res.job_id, res.message);
+                    render_data(&res, format, &summary)?;
+                }
+                JobsCommands::Saved { limit } => {
+                    let jobs = jobs_svc.list_saved_jobs(limit).await?;
+                    if format == OutputFormat::Ndjson {
+                        linkedin::render::stream_ndjson_items(&jobs)?;
+                    } else {
+                        let summary = format!("Found {} saved job(s)", jobs.len());
+                        render_data(&jobs, format, &summary)?;
+                    }
                 }
             }
         }

@@ -1,6 +1,6 @@
 ---
 name: linkedin-quick-actions
-description: Fast, targeted LinkedIn actions (profile lookups, contact extraction, one-off messages, connection requests, inbox spot-checks, invite triage, and timeline/feed interactions) using the linkedin-cli. Use when the user asks to inspect a LinkedIn member, browse/react/comment on feed posts, check unread messages, accept invites, or send an ad-hoc message without running the full background orchestrator.
+description: Fast, targeted LinkedIn actions (profile lookups, contact extraction, one-off messages, connection requests, inbox spot-checks, invite triage, feed interactions, and job scouting/saving) using the linkedin-cli. Use when the user asks to inspect a LinkedIn member, browse/react/comment on feed posts, search/save jobs, check unread messages, accept invites, or send an ad-hoc message without running the full background orchestrator.
 ---
 
 # LinkedIn Quick Actions Skill
@@ -17,7 +17,8 @@ Use this skill when the user asks to:
 3. **Spot-check the inbox**: View the latest unread threads or read a conversation history with a specific member.
 4. **Draft and dispatch a single message or connection request**: Send a targeted 1-on-1 message or connection invite with personalized text approved by the user.
 5. **Feed & Timeline interactions**: Read feed updates, inspect post comments, or safely react, comment, or repost with human jitter.
-6. **Sample search results**: Run exploratory people searches before configuring a larger campaign.
+6. **Job scouting & bookmarking**: Search jobs with faceted filters (remote, timeframe, experience), evaluate detailed descriptions, identify hiring managers, and save shortlisted postings.
+7. **Sample search results**: Run exploratory people searches before configuring a larger campaign.
 
 > [!IMPORTANT]
 > **Orchestrator vs. Quick Actions**:
@@ -29,8 +30,8 @@ Use this skill when the user asks to:
 ## Core Guidelines & Safety Protocols
 
 1. **Human-in-the-Loop for Mutations**:
-   - For read operations (`profile get`, `inbox list`, `invite list`, `feed list`, `feed comments`, `auth status`), execute immediately and display the formatted output.
-   - For mutating actions (`message send`, `connection request`, `invite accept`, `invite ignore`, `post create`, `feed react`, `feed comment`, `feed repost`), **always present the action or drafted text to the user and obtain confirmation before executing**, or run with `-d, --dry-run` first to demonstrate the payload.
+   - For read operations (`profile get`, `inbox list`, `invite list`, `feed list`, `feed comments`, `jobs search`, `jobs get`, `jobs saved`, `auth status`), execute immediately and display the formatted output.
+   - For mutating actions (`message send`, `connection request`, `invite accept`, `invite ignore`, `post create`, `feed react`, `feed comment`, `feed repost`, `jobs save`, `jobs unsave`), **always present the action or drafted text to the user and obtain confirmation before executing**, or run with `-d, --dry-run` first to demonstrate the payload.
 2. **Anti-Bot & Rate Limits**:
    - Never run tight loops or mass automation scripts through this skill.
    - Use `--slow-mo <ms>` (e.g. `--slow-mo 500`) if executing consecutive commands.
@@ -155,6 +156,25 @@ linkedin feed comment <urn> --text "Thanks for sharing this!"
 # Repost:
 linkedin feed repost <urn> --dry-run
 linkedin feed repost <urn> --text "Great read!"
+```
+
+---
+
+### 8. Job Scouting & Talent Intelligence
+Search job opportunities, extract requirements, and shortlist roles:
+```bash
+# Search remote jobs posted in the past week with Easy Apply:
+linkedin jobs search "Staff Rust Engineer" --location "Remote" --workplace remote --posted past-week --easy-apply --limit 10
+
+# Inspect job description, hiring recruiter, salary, and required skills:
+linkedin jobs get <job-id> --json
+
+# Save a job to shortlisted items (always confirm with user first):
+linkedin jobs save <job-id> --dry-run
+linkedin jobs save <job-id>
+
+# View currently saved job postings:
+linkedin jobs saved --limit 10
 ```
 
 ---
