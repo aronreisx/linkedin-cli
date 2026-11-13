@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Aron Reis"]
 license = "GPL-3.0-only"
-repository = "https://github.com/aronreisx/linkedin"
+description = "Fast, Unix-composable LinkedIn CLI and automation tool written in Rust using CDP"
+repository = "https://github.com/aronreisx/linkedin-cli"
 keywords = ["linkedin", "cli", "automation", "cdp", "browser"]
 categories = ["command-line-utilities"]
 
