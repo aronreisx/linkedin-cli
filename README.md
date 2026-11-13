@@ -20,7 +20,42 @@ Fast, Unix-composable LinkedIn command-line interface written in Rust. Automates
 
 ---
 
-## Toolchain & Tasks
+## Prerequisites & Installation
+
+### Prerequisites
+- **Browser**: [Google Chrome](https://www.google.com/chrome/) or Chromium must be installed locally.
+- **Rust Toolchain**: Rust 1.80+ (only required if building from source).
+
+### Installation
+
+#### Option 1: Pre-built Binaries (Recommended)
+Download the latest pre-compiled binary for your platform from [GitHub Releases](https://github.com/aronreisx/linkedin-cli/releases):
+```bash
+# macOS (Apple Silicon - M1/M2/M3)
+curl -fsSL https://github.com/aronreisx/linkedin-cli/releases/latest/download/linkedin-aarch64-apple-darwin.tar.gz | tar -xz
+sudo mv linkedin /usr/local/bin/
+
+# macOS (Intel)
+curl -fsSL https://github.com/aronreisx/linkedin-cli/releases/latest/download/linkedin-x86_64-apple-darwin.tar.gz | tar -xz
+sudo mv linkedin /usr/local/bin/
+
+# Linux (x86_64)
+curl -fsSL https://github.com/aronreisx/linkedin-cli/releases/latest/download/linkedin-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+sudo mv linkedin /usr/local/bin/
+```
+
+#### Option 2: Install via Cargo
+```bash
+# Install directly from GitHub
+cargo install --git https://github.com/aronreisx/linkedin-cli.git
+
+# Or install from a local clone
+cargo install --path .
+```
+
+---
+
+## Toolchain & Tasks (Development)
 
 This project uses [`mise`](https://mise.jdx.dev/) and standard `cargo`:
 
@@ -87,6 +122,14 @@ linkedin auth switch work
 # Delete stored profile
 linkedin auth remove work
 ```
+
+> [!TIP]
+> **First-Time Login & 2FA / Verification**:
+> When authenticating a session profile for the first time, run the initial command with `--headed`:
+> ```bash
+> linkedin --headed auth whoami
+> ```
+> This opens a visible browser window allowing you to solve any initial SMS 2FA, authenticator PIN, or security verification checkpoints interactively. Once verified, the CLI saves the authenticated session cookies (`li_at`) to your native OS keyring, and all future commands will run seamlessly in headless mode.
 
 ---
 
