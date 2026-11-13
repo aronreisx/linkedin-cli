@@ -254,7 +254,7 @@ impl TimelineService for ChromiumTimelineService {
             (async () => {{
                 // Find main like / reaction button
                 const likeBtn = document.querySelector(
-                    'button.react-button__trigger, button[aria-label*="React"], button.reactions-react-button'
+                    'button.react-button__trigger, button[aria-label*="React"], button.reactions-react-button, button[aria-label*="Reaction button state"]'
                 );
                 if (!likeBtn) return {{ success: false, reason: "Reaction button not found" }};
 
@@ -587,21 +587,30 @@ impl ChromiumTimelineService {
     async fn extract_posts_from_current_dom(&self) -> Result<Vec<TimelinePost>, AppError> {
         let js_extract = r#"
             (() => {
-                const postNodes = Array.from(document.querySelectorAll(
+                let postNodes = Array.from(document.querySelectorAll(
                     'div[data-urn*="urn:li:activity"], div[data-id*="urn:li:activity"], .feed-shared-update-v2'
                 ));
+
+                if (postNodes.length === 0) {
+                    postNodes = Array.from(document.querySelectorAll('div[role="listitem"]')).filter(
+                        c => c.querySelector('button[aria-label*="Reaction button state"]') || c.querySelector('#thumbs-up-outline-feed-compact')
+                    );
+                }
 
                 return postNodes.map(node => {
                     const rawUrn = node.getAttribute('data-urn') || node.getAttribute('data-id') || '';
                     const m = rawUrn.match(/urn:li:(activity|share):[0-9]+/);
-                    const urn = m ? m[0] : (rawUrn || 'urn:li:activity:0');
+                    let urn = m ? m[0] : (rawUrn || '');
+                    if (!urn) {
+                        const key = node.getAttribute('componentkey') || node.id || '';
+                        if (key) {
+                            urn = key.startsWith('urn:li:') ? key : `urn:li:activity:${key}`;
+                        } else {
+                            urn = 'urn:li:activity:0';
+                        }
+                    }
 
                     // Author info
-                    const authorNameEl = node.querySelector(
-                        '.update-components-actor__name, .feed-shared-actor__name, span.update-components-actor__single-line-truncate'
-                    );
-                    const authorName = authorNameEl ? authorNameEl.innerText.trim() : 'Unknown';
-
                     const authorLinkEl = node.querySelector('a[href*="/in/"]');
                     let authorHandle = null;
                     if (authorLinkEl && authorLinkEl.href) {
@@ -609,16 +618,42 @@ impl ChromiumTimelineService {
                         if (handleMatch) authorHandle = handleMatch[1];
                     }
 
+                    const authorNameEl = node.querySelector(
+                        '.update-components-actor__name, .feed-shared-actor__name, span.update-components-actor__single-line-truncate, h2, h3, strong'
+                    );
+                    let authorName = authorNameEl ? authorNameEl.innerText.trim() : 'Unknown';
+                    if ((authorName === 'Feed post' || authorName === 'Unknown') && authorLinkEl) {
+                        const firstLine = authorLinkEl.innerText.trim().split('\n')[0].trim();
+                        if (firstLine) authorName = firstLine;
+                        else if (authorHandle) authorName = authorHandle;
+                    }
+
                     const headlineEl = node.querySelector(
                         '.update-components-actor__description, .feed-shared-actor__description, .update-components-actor__sub-description'
                     );
-                    const authorHeadline = headlineEl ? headlineEl.innerText.trim() : null;
+                    let authorHeadline = headlineEl ? headlineEl.innerText.trim() : null;
+                    if (!authorHeadline) {
+                        // Extract headline snippet from card text lines
+                        const lines = node.innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                        const nameIdx = lines.indexOf(authorName);
+                        if (nameIdx >= 0 && nameIdx + 1 < lines.length) {
+                            const nextLine = lines[nameIdx + 1];
+                            if (!nextLine.startsWith('•') && !nextLine.includes('Follow') && nextLine.length > 5) {
+                                authorHeadline = nextLine;
+                            } else if (nameIdx + 2 < lines.length) {
+                                const lineAfter = lines[nameIdx + 2];
+                                if (!lineAfter.includes('Follow') && lineAfter.length > 5) {
+                                    authorHeadline = lineAfter;
+                                }
+                            }
+                        }
+                    }
 
                     // Post text content
                     const textEl = node.querySelector(
-                        '.feed-shared-update-v2__description, .update-components-text, span.break-words'
+                        '.feed-shared-update-v2__description, .update-components-text, span.break-words, div[dir="ltr"]'
                     );
-                    const text = textEl ? textEl.innerText.trim() : '';
+                    const text = textEl ? textEl.innerText.trim() : node.innerText.slice(0, 500).trim();
 
                     // Time
                     const timeEl = node.querySelector('time, .update-components-actor__sub-description');
@@ -626,7 +661,7 @@ impl ChromiumTimelineService {
 
                     // Social counts
                     const reactionsEl = node.querySelector(
-                        '.social-details-social-counts__reactions-count, button[aria-label*="reaction"]'
+                        '.social-details-social-counts__reactions-count, button[aria-label*="reaction"], button[aria-label*="Reaction button state"]'
                     );
                     let reactionCount = 0;
                     if (reactionsEl) {
@@ -635,7 +670,7 @@ impl ChromiumTimelineService {
                     }
 
                     const commentsEl = node.querySelector(
-                        '.social-details-social-counts__comments, button[aria-label*="comment"]'
+                        '.social-details-social-counts__comments, button[aria-label*="comment"], button[aria-label*="Comment"]'
                     );
                     let commentCount = 0;
                     if (commentsEl) {
@@ -644,7 +679,7 @@ impl ChromiumTimelineService {
                     }
 
                     const repostsEl = node.querySelector(
-                        '.social-details-social-counts__reposts, button[aria-label*="repost"]'
+                        '.social-details-social-counts__reposts, button[aria-label*="repost"], button[aria-label*="Repost"]'
                     );
                     let repostCount = 0;
                     if (repostsEl) {
@@ -655,7 +690,7 @@ impl ChromiumTimelineService {
                     // My reaction status
                     let myReaction = null;
                     const likeBtn = node.querySelector(
-                        'button.react-button__trigger, button.reactions-react-button, button[aria-label*="React"]'
+                        'button.react-button__trigger, button.reactions-react-button, button[aria-label*="React"], button[aria-label*="Reaction button state"]'
                     );
                     if (likeBtn) {
                         const ariaLabel = (likeBtn.getAttribute('aria-label') || '').toLowerCase();
@@ -664,7 +699,7 @@ impl ChromiumTimelineService {
                         else if (ariaLabel.includes('love')) myReaction = 'love';
                         else if (ariaLabel.includes('insightful')) myReaction = 'insightful';
                         else if (ariaLabel.includes('funny')) myReaction = 'funny';
-                        else if (likeBtn.getAttribute('aria-pressed') === 'true' || ariaLabel.includes('like')) myReaction = 'like';
+                        else if (likeBtn.getAttribute('aria-pressed') === 'true' || ariaLabel.includes('state: like') || ariaLabel.includes('liked')) myReaction = 'like';
                     }
 
                     // Media URLs
@@ -684,7 +719,7 @@ impl ChromiumTimelineService {
                         my_reaction: myReaction,
                         media_urls: mediaUrls
                     };
-                }).filter(p => p.urn && p.urn.startsWith('urn:li:'));
+                }).filter(p => p.urn && p.urn.length > 0);
             })()
         "#;
 
