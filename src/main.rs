@@ -656,6 +656,9 @@ enum DebugCommands {
         script: Option<String>,
         #[arg(long)]
         js: Option<String>,
+        /// Optional target URL to navigate to before evaluating
+        #[arg(long)]
+        url: Option<String>,
     },
 }
 
@@ -1651,23 +1654,24 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
 
     let session = BrowserSession::launch(&browser_config).await?;
     let target_url = match &cli.command {
-        Commands::Message(..) | Commands::Inbox(..) | Commands::Thread { .. } => "https://www.linkedin.com/messaging/",
-        Commands::Search(..) => "https://www.linkedin.com/search/",
+        Commands::Message(..) | Commands::Inbox(..) | Commands::Thread { .. } => "https://www.linkedin.com/messaging/".to_string(),
+        Commands::Search(..) => "https://www.linkedin.com/search/".to_string(),
         Commands::Connection(ConnectionArgs { command: ConnectionCommands::Request { handle, .. } })
-        | Commands::Connect { handle, .. } => {
-            // Target specific profile directly to avoid intermediate navigation
-            &format!("https://www.linkedin.com/in/{handle}/")
-        }
+        | Commands::Connect { handle, .. } => format!("https://www.linkedin.com/in/{handle}/"),
         Commands::Profile(ProfileArgs { command: ProfileCommands::Get { handle, .. } | ProfileCommands::Contact { handle, .. } | ProfileCommands::Status { handle } })
-        | Commands::ContactInfo { handle, .. } => {
-            &format!("https://www.linkedin.com/in/{handle}/")
+        | Commands::ContactInfo { handle, .. } => format!("https://www.linkedin.com/in/{handle}/"),
+        Commands::Jobs(JobsArgs { command: JobsCommands::Get { id } })
+        | Commands::Jobs(JobsArgs { command: JobsCommands::Save { id } })
+        | Commands::Jobs(JobsArgs { command: JobsCommands::Unsave { id } }) => {
+            let norm_id = ChromiumJobService::normalize_job_id(id);
+            format!("https://www.linkedin.com/jobs/view/{norm_id}/")
         }
-        Commands::Jobs(JobsArgs { command: JobsCommands::Search { .. } }) => "https://www.linkedin.com/jobs/search/",
-        Commands::Jobs(JobsArgs { command: JobsCommands::Saved { .. } }) => "https://www.linkedin.com/my-items/saved-jobs/",
-        Commands::Jobs(..) => "https://www.linkedin.com/jobs/",
-        _ => "https://www.linkedin.com/feed/",
+        Commands::Jobs(JobsArgs { command: JobsCommands::Search { .. } }) => "https://www.linkedin.com/jobs/search/".to_string(),
+        Commands::Jobs(JobsArgs { command: JobsCommands::Saved { .. } }) => "https://www.linkedin.com/my-items/saved-jobs/".to_string(),
+        Commands::Debug(DebugArgs { command: DebugCommands::Eval { url: Some(u), .. } }) => u.clone(),
+        _ => "https://www.linkedin.com/feed/".to_string(),
     };
-    let page = session.get_or_create_page(target_url).await?;
+    let page = session.get_or_create_page(&target_url).await?;
 
     let store = linkedin::infra::resolve_credential_store();
     let stored_creds = store.get_credentials(&cli.session).ok().flatten();
@@ -2286,7 +2290,7 @@ async fn execute_command(cli: Cli) -> Result<(), linkedin::errors::AppError> {
             let res = serde_json::json!({ "status": "ignored", "invitation": handle });
             render_data(&res, format, &format!("Ignored invitation from {handle}"))?;
         }
-        Commands::Debug(DebugArgs { command: DebugCommands::Eval { script, js } })
+        Commands::Debug(DebugArgs { command: DebugCommands::Eval { script, js, .. } })
         | Commands::BrowserEval { script, js } => {
             let code = js.or(script).unwrap_or_else(|| "window.location.href".to_string());
             let res = page

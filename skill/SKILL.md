@@ -1,6 +1,6 @@
 ---
 name: linkedin-quick-actions
-description: Fast, targeted LinkedIn actions (profile lookups, contact extraction, one-off messages, connection requests, inbox spot-checks, invite triage, feed interactions, and job scouting/saving) using the linkedin-cli. Use when the user asks to inspect a LinkedIn member, browse/react/comment on feed posts, search/save jobs, check unread messages, accept invites, or send an ad-hoc message without running the full background orchestrator.
+description: Fast, targeted LinkedIn actions (profile lookups, contact extraction, one-off messages, connection requests, inbox spot-checks, invite triage, feed interactions, job scouting/saving, and job application outreach) using the linkedin-cli. Use when the user asks to inspect a LinkedIn member, browse/react/comment on feed posts, search/save jobs, apply to jobs with tailored resumes, check unread messages, accept invites, or send an ad-hoc message without running the full background orchestrator.
 ---
 
 # LinkedIn Quick Actions Skill
@@ -18,7 +18,9 @@ Use this skill when the user asks to:
 4. **Draft and dispatch a single message or connection request**: Send a targeted 1-on-1 message or connection invite with personalized text approved by the user.
 5. **Feed & Timeline interactions**: Read feed updates, inspect post comments, or safely react, comment, or repost with human jitter.
 6. **Job scouting & bookmarking**: Search jobs with faceted filters (remote, timeframe, experience), evaluate detailed descriptions, identify hiring managers, and save shortlisted postings.
-7. **Sample search results**: Run exploratory people searches before configuring a larger campaign.
+7. **Job application & recruiter outreach pairing**: Pair job scouting with direct recruiter connection requests, and automate Easy Apply flows with tailored resumes under strict human-in-the-loop review gates.
+8. **Sample search results**: Run exploratory people searches before configuring a larger campaign.
+9. **Targeted page inspection**: Evaluate arbitrary page elements, dynamic forms, or custom ATS flows using `linkedin debug eval --url <url>`.
 
 > [!IMPORTANT]
 > **Orchestrator vs. Quick Actions**:
@@ -176,6 +178,52 @@ linkedin jobs save <job-id>
 # View currently saved job postings:
 linkedin jobs saved --limit 10
 ```
+
+---
+
+### 9. Full-Cycle Job Application & Recruiter Outreach Pairing
+Pairing job applications with direct recruiter outreach maximizes visibility:
+```bash
+# 1. Inspect role and hiring team details:
+linkedin jobs get <job-id> --json
+
+# 2. Scout recruiters at the hiring company:
+linkedin search people "<company> recruiter" --page 1 --json
+
+# 3. Formulate a personalized connection note (< 300 chars):
+# "Hi [Name], I just applied to [Company]'s [Role]. With 10+ yrs in backend platforms and deep production experience building agent runtimes, LLM evaluation, and RAG systems, I'd love to connect. Best, [My Name]"
+
+# 4. Dry-run first to verify length and payload:
+linkedin connection request <handle> --note "..." --dry-run
+
+# 5. Dispatch upon user approval:
+linkedin connection request <handle> --note "..."
+```
+
+---
+
+### 10. Dynamic Form & Easy Apply Protocol (Human-in-the-Loop)
+When assisting with LinkedIn Easy Apply multi-page applications:
+1. **Strict Review Gate Policy**:
+   - Inspect and fill contact information, upload resume, and answer questionnaire screening questions.
+   - **Never click the final `Submit application` button autonomously.**
+   - Stop at the final Review page (`Review your application`), extract all filled fields, and prompt the user for explicit confirmation before submitting.
+2. **React Synthetic Event Propagation**:
+   - When setting values on inputs or `<select>` controls in LinkedIn/ClearCompany forms, dispatch `input`, `change`, and `blur` events via the element prototype setter (`Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, val)`) so React registers state changes before clicking `Next`.
+3. **File Upload Handling**:
+   - Clicking "Upload resume" triggers a dynamically created `<input type="file">`.
+   - Intercept this file input, populate `input.files` using `DataTransfer` with a base64-decoded PDF blob, and dispatch `change` and `input` events to cleanly upload resumes without OS file dialog dependencies.
+
+---
+
+### 11. Ad-Hoc Page Introspection with `debug eval --url`
+When standard CLI commands do not expose a specific interactive element or custom page structure:
+```bash
+# Inspect page title and application buttons directly:
+linkedin debug eval --url "https://www.linkedin.com/jobs/view/<job-id>/" \
+  '(() => ({ title: document.title, hasEasyApply: !!document.querySelector("button[aria-label*=\"Easy Apply\"]") }))()'
+```
+Use read-only introspection to inspect form structures and report them to the user before taking mutating actions.
 
 ---
 

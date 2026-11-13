@@ -8,7 +8,8 @@ Fast, Unix-composable LinkedIn command-line interface written in Rust. Automates
 
 - **Clean Unix I/O Separation**: Formatted results (`table`, `json`, `ndjson`, `tsv`) are emitted strictly to `stdout`. All operational logs and tracing output stream to `stderr`.
 - **Anti-Bot Human Jitter & Interactive Tripwire**: Configurable randomized delays and typing cadences to mirror human behavior. Built-in tripwire detection automatically brings the browser window to the foreground, emits an audible chime, and fires a desktop notification when CAPTCHAs or security checkpoints appear.
-- **Keyring & Profile Sandbox**: Credentials stored in the OS keyring; Chromium user data directories are isolated per profile under `~/.linkedin-cli/profiles/<session>`.
+- **Keyring & Profile Sandbox**: Credentials and session cookies (`li_at`) securely stored in the native OS keyring; Chromium user data directories are isolated per profile under `~/.linkedin-cli/profiles/<session>`.
+- **Direct-Target Page Routing**: `profile`, `jobs get/save/unsave`, and `debug eval --url` bypass intermediate landing page redirects, opening dedicated purpose-matched tabs directly to minimize CDP latency and bot detection surface.
 - **Domain Decoupling**: Pure business domain logic separated from CDP infrastructure primitives.
 
 ---
@@ -212,6 +213,24 @@ linkedin jobs unsave 4123456789
 linkedin jobs saved --limit 10 --json
 ```
 
+#### Full-Cycle Job Application & Outreach Workflow
+Pair job scouting with recruiter outreach to maximize response rates:
+```bash
+# 1. Search opportunities with faceted filters
+linkedin jobs search "Applied AI Engineer" --location "Remote" --easy-apply --limit 5 --json
+
+# 2. Inspect full requirements, salary, and hiring company
+linkedin jobs get 4485518487 --json
+
+# 3. Locate lead technical recruiters at the employer
+linkedin search people "Inviso recruiter" --page 1 --json
+
+# 4. Dispatch a targeted connection request (max 300 chars, dry-run first)
+linkedin connection request markssilver \
+  --note "Hi Mark, I just applied to Inviso's Applied AI Engineer role. With 10+ yrs in backend platforms and deep production experience building agent runtimes, LLM evaluation, and RAG systems, I'd love to connect. Best, Aron" \
+  --dry-run
+```
+
 ### Post Drafts & Scheduling
 ```bash
 # Stage a post draft with a scheduled publish date
@@ -246,6 +265,10 @@ Subsequent commands (e.g. `linkedin --session work profile get ...`) automatical
 # Evaluate arbitrary JavaScript expression in the live browser tab
 linkedin debug eval "document.title"
 linkedin debug eval --js "Array.from(document.querySelectorAll('a')).map(a => a.href)"
+
+# Navigate to a specific URL first, then evaluate (ideal for inspecting dynamic forms or external ATS views)
+linkedin debug eval --url "https://www.linkedin.com/jobs/view/4485518487/" \
+  '(() => ({ title: document.title, hasEasyApply: !!document.querySelector("button[aria-label*=\"Easy Apply\"]") }))()'
 ```
 
 ### Interactive Terminal UI (TUI)
